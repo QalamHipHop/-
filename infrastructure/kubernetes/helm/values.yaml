@@ -1,0 +1,71 @@
+# Default values for rial. Override per-env via -f values.prod.yaml.
+image:
+  registry: ghcr.io
+  org: qalamhiphop
+  tag: latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: nginx
+  host: rial.local
+  tls:
+    enabled: true
+    secretName: rial-tls
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits:   { cpu: 1000m, memory: 1Gi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+
+services:
+  backend:        { port: 8080,  replicas: 3 }
+  frontend:       { port: 3000,  replicas: 3 }
+  matching:       { port: 50051, replicas: 4, kind: Deployment }
+  trading:        { port: 50052, replicas: 4, kind: Deployment }
+  wallet:         { port: 50053, replicas: 3 }
+  launchpad:      { port: 50054, replicas: 3 }
+  payment:        { port: 50055, replicas: 3 }
+  notification:   { port: 50056, replicas: 2 }
+  analytics:      { port: 50057, replicas: 2 }
+  ai:             { port: 50058, replicas: 2 }
+
+postgresql:
+  enabled: true
+  auth:
+    database: rial
+    username: rial
+    existingSecret: rial-pg
+  primary:
+    persistence: { size: 200Gi }
+    resources: { requests: { cpu: 500m, memory: 1Gi }, limits: { cpu: 4, memory: 8Gi } }
+
+redis:
+  enabled: true
+  auth: { existingSecret: rial-redis }
+  master:
+    persistence: { size: 50Gi }
+
+clickhouse:
+  enabled: true
+  auth: { existingSecret: rial-ch }
+
+minio:
+  enabled: true
+  persistence: { size: 1Ti }
+
+monitoring:
+  prometheus: { enabled: true }
+  grafana:    { enabled: true }
+  loki:       { enabled: true }
+  tempo:      { enabled: true }
+
+backup:
+  enabled: true
+  schedule: "0 */6 * * *"
+  s3Bucket: rial-backups

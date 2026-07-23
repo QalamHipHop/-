@@ -1,0 +1,289 @@
+# =====================================================================
+#  ﷼ Platform — Full local development stack
+#  Usage:  make up   |   make down   |   make logs-backend
+# =====================================================================
+
+name: rial
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "10"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+
+  # -----------------------------------------------------------------
+  #  Core data plane
+  # -----------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    <<: *default-restart
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rial}
+      POSTGRES_USER: ${POSTGRES_USER:-rial}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    <<: *default-restart
+    command: ["redis-server","--appendonly","yes","--requirepass","${REDIS_PASSWORD:-change-me}"]
+    volumes: ["redisdata:/data"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD","redis-cli","-a","${REDIS_PASSWORD:-change-me}","ping"]
+      interval: 10s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    <<: *default-restart
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-rial_analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-rial}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-change-me}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes: ["chdata:/var/lib/clickhouse"]
+    ports: ["8123:8123","9000:9000"]
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    <<: *default-restart
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes: ["esdata:/usr/share/elasticsearch/data"]
+    ports: ["9200:9200"]
+
+  minio:
+    image: minio/minio:latest
+    <<: *default-restart
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-rial}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me}
+    volumes: ["miniodata:/data"]
+    ports: ["9000:9000","9001:9001"]
+
+  # -----------------------------------------------------------------
+  #  Streaming / messaging
+  # -----------------------------------------------------------------
+  nats:
+    image: nats:2.10-alpine
+    <<: *default-restart
+    command: ["-js","-sd","/data"]
+    volumes: ["natsdata:/data"]
+    ports: ["4222:4222","8222:8222"]
+
+  kafka:
+    image: bitnami/kafka:3.7
+    <<: *default-restart
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes: ["kafkadata:/bitnami/kafka"]
+    ports: ["9092:9092"]
+
+  # -----------------------------------------------------------------
+  #  Search & index
+  # -----------------------------------------------------------------
+  meilisearch:
+    image: getmeili/meilisearch:v1.8
+    <<: *default-restart
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-change-me}
+      MEILI_ENV: development
+    volumes: ["meilidata:/meili_data"]
+    ports: ["7700:7700"]
+
+  # -----------------------------------------------------------------
+  #  Observability
+  # -----------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.0
+    <<: *default-restart
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./infrastructure/monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports: ["4317:4317","4318:4318"]
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    <<: *default-restart
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml","--storage.tsdb.path=/prometheus","--web.enable-lifecycle"]
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    <<: *default-restart
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafdata:/var/lib/grafana
+    ports: ["3002:3000"]
+
+  loki:
+    image: grafana/loki:2.9.4
+    <<: *default-restart
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./infrastructure/monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - lokidata:/loki
+    ports: ["3100:3100"]
+
+  # -----------------------------------------------------------------
+  #  Reverse proxy / WAF
+  # -----------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    <<: *default-restart
+    depends_on: [backend, frontend, grafana, prometheus]
+    ports: ["80:80","443:443"]
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infrastructure/nginx/certs:/etc/nginx/certs:ro
+
+  # -----------------------------------------------------------------
+  #  Application services
+  # -----------------------------------------------------------------
+  backend:
+    build: { context: ./backend, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    ports: ["8080:8080"]
+
+  frontend:
+    build: { context: ./frontend, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [backend]
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_BASE_URL:-http://localhost:8080}
+    ports: ["3000:3000"]
+
+  matching-engine:
+    build: { context: ./matching-engine, dockerfile: Dockerfile }
+    <<: *default-restart
+    ports: ["50051:50051"]
+
+  trading-engine:
+    build: { context: ./trading-engine, dockerfile: Dockerfile }
+    <<: *default-restart
+    ports: ["50052:50052"]
+
+  wallet-service:
+    build: { context: ./wallet-service, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [postgres, redis]
+    ports: ["50053:50053"]
+
+  launchpad-service:
+    build: { context: ./launchpad-service, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [postgres, redis]
+    ports: ["50054:50054"]
+
+  payment-service:
+    build: { context: ./payment-service, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [postgres, redis]
+    ports: ["50055:50055"]
+
+  notification-service:
+    build: { context: ./notification-service, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [postgres, redis]
+    ports: ["50056:50056"]
+
+  analytics:
+    build: { context: ./analytics, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [clickhouse, postgres, redis]
+    ports: ["50057:50057"]
+
+  ai-engine:
+    build: { context: ./ai-engine, dockerfile: Dockerfile }
+    <<: *default-restart
+    depends_on: [redis]
+    ports: ["50058:50058"]
+
+  # -----------------------------------------------------------------
+  #  Tooling / one-shots
+  # -----------------------------------------------------------------
+  migrate:
+    image: node:20-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    volumes: ["./database:/app","./backend:/app/backend"]
+    command: ["sh","-c","node database/postgres/migrate.js up"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+  seed:
+    image: node:20-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    volumes: ["./database:/app"]
+    command: ["sh","-c","node database/postgres/seed.js"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+  test:
+    image: node:20-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    volumes: [".:/app"]
+    command: ["sh","-c","echo 'run tests here'"]
+
+  lint:
+    image: node:20-alpine
+    profiles: ["tools"]
+    working_dir: /app
+    volumes: [".:/app"]
+    command: ["sh","-c","echo 'lint here'"]
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+  chdata: {}
+  esdata: {}
+  miniodata: {}
+  natsdata: {}
+  kafkadata: {}
+  meilidata: {}
+  promdata: {}
+  grafdata: {}
+  lokidata: {}

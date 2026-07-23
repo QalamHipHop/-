@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "rial.fullname" . }}-backup
+  labels: {{- include "rial.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: "{{ .Values.image.registry }}/{{ .Values.image.org }}/rial-backend:{{ .Values.image.tag }}"
+              command: ["bash","-c","/app/infrastructure/backup/backup.sh"]
+              envFrom:
+                - secretRef: { name: rial-env }
+              volumeMounts:
+                - name: infra
+                  mountPath: /app/infrastructure
+          volumes:
+            - name: infra
+              configMap:
+                name: {{ include "rial.fullname" . }}-infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rial.fullname" . }}-infra
+data:
+  backup.sh: |
+    {{- .Files.Get "infrastructure/backup/backup.sh" | nindent 4 }}

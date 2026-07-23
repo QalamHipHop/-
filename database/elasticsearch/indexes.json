@@ -1,0 +1,28 @@
+{
+  "index_patterns": ["rial-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "analysis": {
+        "analyzer": {
+          "rial_text": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "asciifolding"]
+          }
+        }
+      }
+    },
+    "mappings": {
+      "properties": {
+        "kind":       { "type": "keyword" },
+        "id":         { "type": "keyword" },
+        "title":      { "type": "text", "analyzer": "rial_text" },
+        "body":       { "type": "text", "analyzer": "rial_text" },
+        "tags":       { "type": "keyword" },
+        "created_at": { "type": "date" }
+      }
+    }
+  }
+}

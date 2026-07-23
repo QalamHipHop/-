@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: echo "lint placeholder"
+
+  test-rust:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { service: [matching-engine, trading-engine] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - working-directory: ${{ matrix.service }}
+      - run: cargo test --all
+
+  test-go:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: { service: [wallet-service, launchpad-service] }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+      - working-directory: ${{ matrix.service }}
+      - run: go test ./...
+
+  build-images:
+    runs-on: ubuntu-latest
+    needs: [lint, test-rust, test-go]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.yml build
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL

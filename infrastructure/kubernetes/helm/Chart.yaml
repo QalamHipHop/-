@@ -1,0 +1,9 @@
+apiVersion: v2
+name: rial
+description: RIAL — production-grade token launch platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [blockchain, dex, launchpad, trading]
+maintainers:
+  - name: RIAL Platform Team

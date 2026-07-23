@@ -1,0 +1,57 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: rial-dev
+
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs: [{ targets: ["localhost:9090"] }]
+
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs: [{ targets: ["backend:8080"] }]
+
+  - job_name: matching-engine
+    static_configs: [{ targets: ["matching-engine:50051"] }]
+    metrics_path: /metrics
+
+  - job_name: trading-engine
+    static_configs: [{ targets: ["trading-engine:50052"] }]
+    metrics_path: /metrics
+
+  - job_name: wallet-service
+    static_configs: [{ targets: ["wallet-service:50053"] }]
+    metrics_path: /metrics
+
+  - job_name: launchpad-service
+    static_configs: [{ targets: ["launchpad-service:50054"] }]
+    metrics_path: /metrics
+
+  - job_name: payment-service
+    static_configs: [{ targets: ["payment-service:50055"] }]
+    metrics_path: /metrics
+
+  - job_name: notification-service
+    static_configs: [{ targets: ["notification-service:50056"] }]
+    metrics_path: /metrics
+
+  - job_name: analytics
+    static_configs: [{ targets: ["analytics:50057"] }]
+    metrics_path: /metrics
+
+  - job_name: ai-engine
+    static_configs: [{ targets: ["ai-engine:50058"] }]
+    metrics_path: /metrics
+
+  - job_name: postgres
+    static_configs: [{ targets: ["postgres-exporter:9187"] }]
+
+  - job_name: redis
+    static_configs: [{ targets: ["redis-exporter:9121"] }]
+
+  - job_name: nginx
+    static_configs: [{ targets: ["nginx-exporter:9113"] }]

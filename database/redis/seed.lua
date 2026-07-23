@@ -1,0 +1,10 @@
+-- Redis init: rate-limit & idempotency keys live here; nothing to seed at boot.
+-- Document intended key prefixes for the team:
+--
+--  rial:idem:<key>          -> JSON payload, TTL 24h
+--  rial:ratelimit:<scope>  -> sorted-set / token-bucket per user/ip
+--  rial:lock:<resource>    -> mutex, NX EX
+--  rial:session:<sid>      -> session blob
+--  rial:leaderboard:<name> -> ZSET
+--  rial:quote:<market>     -> last price cache
+--  rial:fx:rial:usd        -> cached FX rate

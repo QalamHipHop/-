@@ -1,0 +1,41 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "rial.fullname" . }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "25m"
+    nginx.ingress.kubernetes.io/rate-limit: "200"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "rial.fullname" . }}-frontend
+                port: { number: 80 }
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "rial.fullname" . }}-backend
+                port: { number: 80 }
+          - path: /graphql
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "rial.fullname" . }}-backend
+                port: { number: 80 }
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "rial.fullname" . }}-backend
+                port: { number: 80 }

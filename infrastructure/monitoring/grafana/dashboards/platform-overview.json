@@ -1,0 +1,44 @@
+{
+  "title": "RIAL — Platform Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active users (24h)",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "sum(increase(http_requests_total{service=\"backend\",status=~\"2..\"}[24h]))" }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Orders / sec (5m)",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "sum(rate(orders_total[5m]))" }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Match latency p99 (ms)",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(match_latency_ms_bucket[5m])) by (le))" }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Trading volume (24h, ﷼)",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "sum(increase(trade_volume_minor[24h])) / 1e8" }
+      ],
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 }
+    }
+  ]
+}

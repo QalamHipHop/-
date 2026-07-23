@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rial.fullname" . }}-backend
+  labels: {{- include "rial.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.services.backend.replicas }}
+  selector:
+    matchLabels: {{- include "rial.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "rial.labels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.image.registry }}/{{ .Values.image.org }}/rial-backend:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef: { name: rial-env }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rial.fullname" . }}-backend
+spec:
+  selector: {{- include "rial.labels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

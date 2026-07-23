@@ -1,0 +1,46 @@
+groups:
+  - name: rial.core
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Service {{ $labels.job }} is down on {{ $labels.instance }}"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+            / sum(rate(http_requests_total[5m])) by (service) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Error rate > 5% on {{ $labels.service }}"
+
+      - alert: MatchLatencyHigh
+        expr: histogram_quantile(0.99, sum(rate(match_latency_ms_bucket[5m])) by (le)) > 50
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Matching p99 > 50ms"
+
+      - alert: PostgresReplicationLag
+        expr: pg_replication_lag_seconds > 30
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Postgres replica lag > 30s"
+
+      - alert: HotWalletBalanceLow
+        expr: hot_wallet_balance_minor < 1000000000   # < 10 ﷼ (8dp)
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Hot wallet balance low: {{ $value }} minor units"
+
+      - alert: FraudScoreHigh
+        expr: fraud_score > 0.9
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "High fraud score on user {{ $labels.user_id }}"
