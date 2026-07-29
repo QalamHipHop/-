@@ -46,7 +46,7 @@ describe('NotificationsService', () => {
     const svc = new NotificationsService(cfg);
     svc.onModuleInit();
     const out = await svc.fanout(
-      { id: 'f', recipient: 'u', body: 'b' },
+      { id: 'f', channel: 'inbox', recipient: 'u', body: 'b' },
       ['inbox', 'email'],
     );
     expect(out.length).toBe(2);

@@ -34,6 +34,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.setex(key, seconds, value) as Promise<'OK'>;
   }
 
+  expire(key: string, seconds: number): Promise<number> {
+    return this.client.expire(key, seconds);
+  }
+
   incr(key: string): Promise<number> {
     return this.client.incr(key);
   }

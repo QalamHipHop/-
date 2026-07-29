@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 
 import { IdempotencyCache } from '../common/idempotency';
@@ -17,13 +17,14 @@ import {
   NotificationProvider,
   SendResult,
 } from './notifications.types';
+import { APP_CONFIG } from './notifications.module';
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
   private readonly providers = new Map<NotificationChannel, NotificationProvider>();
   private readonly idempotency = new IdempotencyCache();
 
-  constructor(private readonly cfg: AppConfig) {}
+  constructor(@Inject(APP_CONFIG) private readonly cfg: AppConfig) {}
 
   onModuleInit(): void {
     this.providers.set('email', new EmailProvider(this.cfg.smtp));

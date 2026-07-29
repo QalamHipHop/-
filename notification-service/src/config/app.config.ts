@@ -43,6 +43,18 @@ export interface WebPushConfig {
 
 export function loadConfig(): AppConfig {
   const env = process.env.NODE_ENV ?? 'development';
+  const smsProviderName = process.env.SMS_PROVIDER;
+  const smsProvider: SmsConfig | undefined =
+    smsProviderName === 'kavenegar' || smsProviderName === 'twilio' || smsProviderName === 'noop'
+      ? {
+          provider: smsProviderName,
+          apiKey: process.env.SMS_API_KEY,
+          from: process.env.SMS_FROM,
+        }
+      : undefined;
+  const telegramBot = envVar('TELEGRAM_BOT_TOKEN');
+  const discordHook = envVar('DISCORD_WEBHOOK_URL');
+  const webPushPub = envVar('WEBPUSH_PUBLIC_KEY');
   return {
     port: Number(process.env.PORT ?? 50056),
     nodeEnv: env,
@@ -52,25 +64,21 @@ export function loadConfig(): AppConfig {
     kafkaBrokers: process.env.KAFKA_BROKERS,
     smtp: envVar('SMTP_HOST')
       ? {
-          host: envVar('SMTP_HOST'),
-          port: Number(envVar('SMTP_PORT', '587')),
+          host: envVar('SMTP_HOST')!,
+          port: Number(envVar('SMTP_PORT', '587') ?? '587'),
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
-          from: envVar('SMTP_FROM', 'no-reply@rial.local'),
+          from: envVar('SMTP_FROM', 'no-reply@rial.local')!,
         }
       : undefined,
-    smsProvider: process.env.SMS_PROVIDER as SmsConfig['provider'] | undefined,
-    telegram: process.env.TELEGRAM_BOT_TOKEN
-      ? { botToken: envVar('TELEGRAM_BOT_TOKEN') }
-      : undefined,
-    discord: process.env.DISCORD_WEBHOOK_URL
-      ? { webhookUrl: envVar('DISCORD_WEBHOOK_URL') }
-      : undefined,
-    webPush: process.env.WEBPUSH_PUBLIC_KEY
+    smsProvider,
+    telegram: telegramBot ? { botToken: telegramBot } : undefined,
+    discord: discordHook ? { webhookUrl: discordHook } : undefined,
+    webPush: webPushPub
       ? {
-          publicKey: envVar('WEBPUSH_PUBLIC_KEY'),
-          privateKey: envVar('WEBPUSH_PRIVATE_KEY'),
-          subject: envVar('WEBPUSH_SUBJECT', 'mailto:admin@rial.local'),
+          publicKey: webPushPub,
+          privateKey: envVar('WEBPUSH_PRIVATE_KEY') ?? '',
+          subject: envVar('WEBPUSH_SUBJECT', 'mailto:admin@rial.local')!,
         }
       : undefined,
   };

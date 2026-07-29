@@ -15,6 +15,6 @@ export class PubSubService {
   }
 
   asyncIterator<T = unknown>(triggers: string | string[]): AsyncIterator<T> {
-    return this.pubsub.asyncIterableIterator<T>(triggers) as unknown as AsyncIterator<T>;
+    return this.pubsub.asyncIterator<T>(triggers);
   }
 }

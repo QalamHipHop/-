@@ -1,7 +1,7 @@
 import { Notification, NotificationProvider, SendResult } from './notifications.types';
 import { logger } from '../common/logger';
 import { TelegramConfig } from '../config/app.config';
-import * as fetch from 'node-fetch';
+import fetch from 'node-fetch';
 
 export class TelegramProvider implements NotificationProvider {
   readonly channel = 'telegram' as const;

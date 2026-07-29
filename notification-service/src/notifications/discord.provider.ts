@@ -1,7 +1,7 @@
 import { Notification, NotificationProvider, SendResult } from './notifications.types';
 import { logger } from '../common/logger';
 import { DiscordConfig } from '../config/app.config';
-import * as fetch from 'node-fetch';
+import fetch from 'node-fetch';
 
 export class DiscordProvider implements NotificationProvider {
   readonly channel = 'discord' as const;
