@@ -1,0 +1,29 @@
+# Matching engine runtime configuration.
+# Mounted at /etc/rial/matching.yaml in containers.
+
+grpc:
+  addr: "0.0.0.0:50051"
+  max_concurrent_streams: 1000
+  keepalive_secs: 30
+
+health:
+  addr: "0.0.0.0:8081"
+
+metrics:
+  addr: "0.0.0.0:9101"
+  namespace: "rial_matching"
+
+fees:
+  taker_bps: 30
+  maker_bps: 10
+
+markets:
+  - "RIAL-USD"
+  - "RIAL-USDT"
+  - "RIAL-BTC"
+
+broadcast:
+  nats:
+    url: "nats://nats:4222"
+    subject_trades: "trades.>"
+    subject_book: "book.>"
