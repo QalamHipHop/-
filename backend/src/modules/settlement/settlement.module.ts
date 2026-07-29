@@ -10,6 +10,7 @@ import { SettlementService } from './settlement.service';
 import { SettlementController } from './settlement.controller';
 import { FixedRateProvider } from './providers/fixed.provider';
 import { ExternalRateProvider } from './providers/external.provider';
+import { FloatingRateProvider } from './providers/floating.provider';
 import { RateProvider } from './providers/rate-provider.interface';
 
 @Module({
@@ -18,10 +19,11 @@ import { RateProvider } from './providers/rate-provider.interface';
   providers: [
     FixedRateProvider,
     ExternalRateProvider,
+    FloatingRateProvider,
     {
       provide: 'RATE_PROVIDERS',
-      useFactory: (fixed: FixedRateProvider, ext: ExternalRateProvider) => [fixed, ext],
-      inject: [FixedRateProvider, ExternalRateProvider],
+      useFactory: (fixed: FixedRateProvider, ext: ExternalRateProvider, fl: FloatingRateProvider) => [fixed, fl, ext],
+      inject: [FixedRateProvider, ExternalRateProvider, FloatingRateProvider],
     },
     SettlementService,
   ],
