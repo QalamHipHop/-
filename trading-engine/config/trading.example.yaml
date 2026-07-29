@@ -1,0 +1,32 @@
+# Trading Engine — sample configuration
+# All paths are relative to the working directory unless absolute.
+
+server:
+  grpc_addr: "0.0.0.0:50052"
+  health_addr: "0.0.0.0:50082"  # dedicated /healthz & /metrics port
+  shutdown_grace_seconds: 15
+
+routing:
+  default_venues:
+    - "internal:matching"
+  allow_external_default: false
+  max_legs_per_order: 4
+  max_slippage_bps: 50
+
+market_making:
+  enabled: true
+  default_spread_bps: 30
+  default_size: "1000"
+  inventory_skew_factor: "0.5"
+  refresh_interval_ms: 500
+  max_open_orders_per_symbol: 20
+
+risk:
+  max_order_notional: "1000000"
+  max_position_per_symbol: "100000"
+  max_daily_loss: "50000"
+  kill_switch: false
+
+logging:
+  level: "info"
+  format: "json"   # "json" | "pretty"

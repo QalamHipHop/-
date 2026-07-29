@@ -1,0 +1,188 @@
+syntax = "proto3";
+
+package rial.trading.v1;
+
+// =====================================================================
+//  Trading Engine — public gRPC API
+//  Responsibilities:
+//    - Smart order routing across matching engines / external venues
+//    - Market-making inventory & risk control
+//    - Strategy execution (TWAP, VWAP, pegged quotes)
+//    - Health, metrics
+// =====================================================================
+
+service TradingEngine {
+  // --- Order routing ---------------------------------------------------
+  rpc RouteOrder (RouteOrderRequest) returns (RouteOrderResponse);
+  rpc CancelRoute (CancelRouteRequest) returns (CancelRouteResponse);
+
+  // --- Market making ---------------------------------------------------
+  rpc UpsertStrategy (UpsertStrategyRequest) returns (UpsertStrategyResponse);
+  rpc ListStrategies (ListStrategiesRequest) returns (ListStrategiesResponse);
+  rpc DisableStrategy (DisableStrategyRequest) returns (DisableStrategyResponse);
+
+  // --- Streaming -------------------------------------------------------
+  rpc StreamFills (StreamFillsRequest) returns (stream FillEvent);
+  rpc StreamQuotes (StreamQuotesRequest) returns (stream QuoteEvent);
+
+  // --- Operational -----------------------------------------------------
+  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc Metrics (MetricsRequest) returns (MetricsResponse);
+}
+
+// =====================================================================
+//  Common
+// =====================================================================
+
+enum Side {
+  SIDE_UNSPECIFIED = 0;
+  BUY  = 1;
+  SELL = 2;
+}
+
+enum OrderType {
+  ORDER_TYPE_UNSPECIFIED = 0;
+  MARKET = 1;
+  LIMIT  = 2;
+}
+
+enum TimeInForce {
+  TIF_UNSPECIFIED = 0;
+  GTC = 1; // good-till-cancel
+  IOC = 2; // immediate-or-cancel
+  FOK = 3; // fill-or-kill
+}
+
+enum StrategyKind {
+  STRATEGY_UNSPECIFIED = 0;
+  PEGGED_QUOTES  = 1; // keep a spread around a reference price
+  TWAP           = 2; // slice a parent order over a window
+  VWAP           = 3; // slice a parent order following a volume curve
+  INVENTORY_SKEW = 4; // skew quotes based on inventory
+}
+
+// =====================================================================
+//  Messages
+// =====================================================================
+
+message Decimal {
+  // String-encoded base-10 number to avoid float drift. Must be valid
+  // for rust_decimal::Decimal::from_str.
+  string value = 1;
+}
+
+message RouteOrderRequest {
+  string client_order_id = 1;
+  string user_id         = 2;
+  string symbol          = 3;
+  Side   side            = 4;
+  OrderType type         = 5;
+  TimeInForce tif        = 6;
+  Decimal quantity       = 7;
+  Decimal price          = 8;  // optional; required for LIMIT
+  string venue_hint      = 9;  // optional preferred venue
+  bool   allow_external  = 10; // allow routing outside the platform
+  string correlation_id  = 11;
+}
+
+message RoutedLeg {
+  string venue      = 1;
+  string venue_id   = 2;
+  Decimal price     = 3;
+  Decimal quantity  = 4;
+  int64  routed_at_ms = 5;
+}
+
+message RouteOrderResponse {
+  string parent_id     = 1;
+  string status        = 2; // "ACCEPTED" | "REJECTED" | "PARTIALLY_FILLED" | "FILLED"
+  repeated RoutedLeg legs = 3;
+  string reason        = 4; // human-readable when rejected
+}
+
+message CancelRouteRequest {
+  string parent_id     = 1;
+  string correlation_id = 2;
+}
+
+message CancelRouteResponse {
+  bool   cancelled = 1;
+  string reason    = 2;
+}
+
+message StrategySpec {
+  string id          = 1;
+  StrategyKind kind  = 2;
+  string symbol      = 3;
+  bool   enabled     = 4;
+  // Free-form parameters; the engine interprets them per StrategyKind.
+  map<string, string> params = 5;
+}
+
+message UpsertStrategyRequest {
+  StrategySpec strategy = 1;
+  string correlation_id = 2;
+}
+
+message UpsertStrategyResponse {
+  bool   accepted = 1;
+  string reason   = 2;
+}
+
+message ListStrategiesRequest {
+  string symbol = 1; // empty = all
+}
+
+message ListStrategiesResponse {
+  repeated StrategySpec strategies = 1;
+}
+
+message DisableStrategyRequest {
+  string id = 1;
+  string correlation_id = 2;
+}
+
+message DisableStrategyResponse {
+  bool   disabled = 1;
+  string reason   = 2;
+}
+
+message StreamFillsRequest {
+  string user_id = 1; // empty = all
+}
+
+message FillEvent {
+  string parent_id   = 1;
+  string venue_id    = 2;
+  string symbol      = 3;
+  Side   side        = 4;
+  Decimal price      = 5;
+  Decimal quantity   = 6;
+  Decimal fee        = 7;
+  int64  filled_at_ms = 8;
+}
+
+message StreamQuotesRequest {
+  string symbol = 1; // empty = all
+}
+
+message QuoteEvent {
+  string symbol   = 1;
+  Side   side     = 2;
+  Decimal price   = 3;
+  Decimal size    = 4;
+  int64  issued_at_ms = 5;
+}
+
+message HealthRequest  {}
+message HealthResponse {
+  string status = 1; // "OK" | "DEGRADED" | "DOWN"
+  int64  uptime_seconds = 2;
+  int64  active_strategies = 3;
+  int64  open_orders = 4;
+}
+
+message MetricsRequest {}
+message MetricsResponse {
+  string prometheus_text = 1;
+}
