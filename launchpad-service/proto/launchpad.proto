@@ -1,0 +1,92 @@
+// Proto definitions for the launchpad-service.
+// Build with: protoc --go_out=. --go-grpc_out=. proto/launchpad.proto
+syntax = "proto3";
+package rial.launchpad.v1;
+
+option go_package = "github.com/rial/launchpad-service/internal/api;api";
+
+import "google/protobuf/timestamp.proto";
+
+service Launchpad {
+  rpc Healthz(Empty) returns (HealthResponse);
+
+  rpc CreateToken(CreateTokenRequest) returns (TokenResponse);
+  rpc GetToken(GetTokenRequest) returns (TokenResponse);
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse);
+  rpc ApproveToken(TokenActionRequest) returns (Empty);
+  rpc RejectToken(RejectTokenRequest) returns (Empty);
+  rpc PauseToken(PauseTokenRequest) returns (Empty);
+
+  rpc QuoteBuy(QuoteBuyRequest) returns (BuyQuoteResponse);
+  rpc Buy(BuyRequest) returns (BuyResultResponse);
+  rpc Sell(SellRequest) returns (BuyResultResponse);
+
+  rpc GetVesting(GetVestingRequest) returns (VestingResponse);
+}
+
+message Empty {}
+
+message HealthResponse { string status = 1; string version = 2; }
+
+message Token {
+  string id = 1; string creator_id = 2; string chain = 3; string contract_address = 4;
+  string name = 5; string symbol = 6; int32 decimals = 7; string total_supply = 8;
+  string logo_url = 9; string banner_url = 10; string description = 11;
+  string website = 12; string telegram = 13; string twitter = 14; string discord = 15; string github = 16;
+  string mint_authority = 17; string freeze_authority = 18;
+  string curve_model = 19; string graduation_rial_minor = 20; bool graduated = 21;
+  string status = 22;
+  google.protobuf.Timestamp created_at = 23; google.protobuf.Timestamp updated_at = 24;
+}
+
+message CreateTokenRequest {
+  string creator_id = 1;
+  string name = 2; string symbol = 3; int32 decimals = 4; string total_supply = 5;
+  string chain = 6; string contract_address = 7;
+  string logo_url = 8; string banner_url = 9; string description = 10;
+  string website = 11; string telegram = 12; string twitter = 13; string discord = 14; string github = 15;
+  string mint_authority = 16; string freeze_authority = 17;
+  string curve_model = 18; string curve_params_json = 19; string graduation_rial_minor = 20;
+  repeated VestingInput vesting = 21;
+}
+
+message VestingInput {
+  string beneficiary = 1; string total_minor = 2;
+  int32 cliff_seconds = 3; int32 duration_seconds = 4;
+  google.protobuf.Timestamp start_at = 5;
+}
+
+message GetTokenRequest { string id = 1; }
+message TokenResponse { Token token = 1; }
+
+message ListTokensRequest { string status = 1; int32 limit = 2; int32 offset = 3; }
+message ListTokensResponse { repeated Token tokens = 1; }
+
+message TokenActionRequest { string token_id = 1; string actor_id = 2; }
+message RejectTokenRequest { string token_id = 1; string actor_id = 2; string reason = 3; }
+message PauseTokenRequest { string token_id = 1; string actor_id = 2; string reason = 3; }
+
+message BuyQuote {
+  Token token = 1; string amount_in_minor = 2; string amount_out_minor = 3; string fee_minor = 4;
+  int32 price_impact_bps = 5; string new_reserve_minor = 6; string new_supply_minor = 7;
+  bool will_graduate = 8;
+}
+
+message QuoteBuyRequest { string token_id = 1; string amount_in_minor = 2; }
+message BuyQuoteResponse { BuyQuote quote = 1; }
+
+message BuyRequest { string user_id = 1; string token_id = 2; string amount_in_minor = 3; string client_id = 4; }
+message SellRequest { string user_id = 1; string token_id = 2; string amount_in_minor = 3; string client_id = 4; }
+message BuyResultResponse {
+  BuyQuote quote = 1; string trade_id = 2; string tx_hash = 3;
+  google.protobuf.Timestamp executed_at = 4;
+}
+
+message GetVestingRequest { string token_id = 1; string beneficiary = 2; }
+message VestingResponse { repeated VestingSchedule schedules = 1; }
+
+message VestingSchedule {
+  string id = 1; string token_id = 2; string beneficiary = 3; string total_minor = 4;
+  string released_minor = 5; int32 cliff_seconds = 6; int32 duration_seconds = 7;
+  google.protobuf.Timestamp start_at = 8; google.protobuf.Timestamp created_at = 9;
+}

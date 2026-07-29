@@ -1,21 +1,82 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { JetStreamClient, StringCodec } from 'nats';
+/**
+ *  EventBus — thin NATS JetStream wrapper with in-process fan-out fallback.
+ *  Subscribers are stored locally so any module can react to events even
+ *  when NATS is not reachable (dev/single-node).
+ */
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { JetStreamClient, StringCodec, Subscription } from 'nats';
 import { NATS_JETSTREAM } from '../../infrastructure/nats/nats.module';
 
+type Handler = (payload: unknown, raw: unknown) => void | Promise<void>;
+
 @Injectable()
-export class EventBusService {
+export class EventBusService implements OnModuleInit {
   private readonly logger = new Logger(EventBusService.name);
   private readonly sc = StringCodec();
+  private readonly localSubs = new Map<string, Set<Handler>>();
+  private readonly remoteSubs = new Map<string, Subscription>();
+  private jsAvailable = true;
 
-  constructor(@Inject(NATS_JETSTREAM) private readonly js: JetStreamClient) {}
+  constructor(@Inject(NATS_JETSTREAM) private readonly js: JetStreamClient | null) {}
+
+  async onModuleInit() {
+    if (!this.js) { this.jsAvailable = false; return; }
+    // Nothing to do here; subscriptions are lazy on first .subscribe()
+  }
 
   async publish(subject: string, payload: unknown, opts: { msgId?: string } = {}): Promise<void> {
     const body = this.sc.encode(JSON.stringify({ ts: new Date().toISOString(), payload }));
+    // local fan-out first (always)
+    this.fanoutLocal(subject, payload);
+    if (!this.jsAvailable || !this.js) return;
     try {
       await this.js.publish(subject, body, { msgID: opts.msgId });
     } catch (e) {
-      this.logger.error(`publish failed on ${subject}`, e as Error);
-      throw e;
+      this.logger.warn(`nats publish failed on ${subject} (kept local): ${(e as Error).message}`);
     }
   }
+
+  async subscribe(subject: string, handler: Handler): Promise<() => void> {
+    if (!this.localSubs.has(subject)) this.localSubs.set(subject, new Set());
+    this.localSubs.get(subject)!.add(handler);
+    if (this.jsAvailable && this.js && !this.remoteSubs.has(subject)) {
+      try {
+        const sub = await this.js.subscribe(subject);
+        this.remoteSubs.set(subject, sub);
+        (async () => {
+          for await (const msg of sub) {
+            try {
+              const data = JSON.parse(this.sc.decode(msg.data));
+              this.fanoutLocal(subject, data.payload ?? data, data);
+              msg.ack();
+            } catch (e) {
+              this.logger.warn(`subscriber ${subject} failed: ${(e as Error).message}`);
+            }
+          }
+        })().catch((e) => this.logger.error(`sub loop ${subject}: ${(e as Error).message}`));
+      } catch (e) {
+        this.logger.warn(`nats subscribe failed for ${subject}: ${(e as Error).message}`);
+      }
+    }
+    return () => {
+      this.localSubs.get(subject)?.delete(handler);
+    };
+  }
+
+  private fanoutLocal(subject: string, payload: unknown, raw?: unknown) {
+    for (const [s, handlers] of this.localSubs) {
+      if (s === subject || s === '*' || matchGlob(s, subject)) {
+        for (const h of handlers) {
+          try { void h(payload, raw ?? payload); } catch (e) { this.logger.warn(`local handler error: ${(e as Error).message}`); }
+        }
+      }
+    }
+  }
+}
+
+function matchGlob(pattern: string, subject: string): boolean {
+  if (pattern === subject) return true;
+  if (pattern === '>') return true;
+  const regex = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^.]+').replace(/>/g, '.*') + '$');
+  return regex.test(subject);
 }
