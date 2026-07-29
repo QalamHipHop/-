@@ -1,0 +1,165 @@
+// =============================================================================
+//  RIAL payment-service — gRPC contract
+//  Author: QalamCode
+// =============================================================================
+syntax = "proto3";
+
+package rial.payment.v1;
+
+option go_package = "github.com/rial/payment-service/proto;rialpaymentpb";
+option java_package = "com.rial.payment.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+
+// -----------------------------------------------------------------------------
+//  Common
+// -----------------------------------------------------------------------------
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING = 1;
+  PAYMENT_STATUS_PROCESSING = 2;
+  PAYMENT_STATUS_SUCCEEDED = 3;
+  PAYMENT_STATUS_FAILED = 4;
+  PAYMENT_STATUS_CANCELLED = 5;
+  PAYMENT_STATUS_REFUNDED = 6;
+  PAYMENT_STATUS_EXPIRED = 7;
+}
+
+enum PaymentKind {
+  PAYMENT_KIND_UNSPECIFIED = 0;
+  PAYMENT_KIND_DEPOSIT = 1;
+  PAYMENT_KIND_WITHDRAWAL = 2;
+}
+
+enum PaymentAdapter {
+  PAYMENT_ADAPTER_UNSPECIFIED = 0;
+  PAYMENT_ADAPTER_MANUAL = 1;
+  PAYMENT_ADAPTER_STRIPE = 2;
+  PAYMENT_ADAPTER_ZARINPAL = 3;
+  PAYMENT_ADAPTER_NOWPAYMENTS = 4;
+  PAYMENT_ADAPTER_INTERNAL = 5;
+}
+
+message Money {
+  // amount in minor units (e.g. cents). Use string to avoid 64-bit JSON issues.
+  string amount_minor = 1;
+  string currency = 2; // ISO-4217 like "USD", "EUR", "IRR"
+}
+
+message CreateDepositRequest {
+  string user_id = 1;
+  PaymentAdapter adapter = 2;
+  Money amount = 3;
+  string reference = 4;       // user-provided ref / order id
+  string idempotency_key = 5; // unique per attempt
+  map<string, string> metadata = 6;
+  string return_url = 7;      // for redirect-based adapters
+}
+
+message CreateDepositResponse {
+  string intent_id = 1;
+  PaymentStatus status = 2;
+  Money amount = 3;
+  PaymentAdapter adapter = 4;
+  string redirect_url = 5;    // for hosted-checkout flows
+  string qr_code = 6;         // for crypto / QR flows
+  map<string, string> adapter_payload = 7; // opaque adapter-specific data
+  google.protobuf.Timestamp expires_at = 8;
+}
+
+message CreateWithdrawalRequest {
+  string user_id = 1;
+  PaymentAdapter adapter = 2;
+  Money amount = 3;
+  string destination = 4; // iban, card, address, etc.
+  string idempotency_key = 5;
+  map<string, string> metadata = 6;
+}
+
+message CreateWithdrawalResponse {
+  string withdrawal_id = 1;
+  PaymentStatus status = 2;
+  Money amount = 3;
+  PaymentAdapter adapter = 4;
+  string reference = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message GetIntentRequest {
+  string intent_id = 1;
+}
+
+message Intent {
+  string id = 1;
+  PaymentKind kind = 2;
+  string user_id = 3;
+  PaymentAdapter adapter = 4;
+  PaymentStatus status = 5;
+  Money amount = 6;
+  Money settled_amount = 7;
+  string reference = 8;
+  string redirect_url = 9;
+  string failure_reason = 10;
+  map<string, string> metadata = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  google.protobuf.Timestamp expires_at = 14;
+}
+
+message ListIntentsRequest {
+  string user_id = 1;
+  PaymentKind kind = 2;
+  PaymentStatus status = 3;
+  uint32 page = 4;
+  uint32 page_size = 5;
+}
+
+message ListIntentsResponse {
+  repeated Intent intents = 1;
+  uint64 total = 2;
+}
+
+message CancelIntentRequest {
+  string intent_id = 1;
+  string reason = 2;
+}
+
+message WebhookEvent {
+  string id = 1;
+  PaymentAdapter adapter = 2;
+  string event_type = 3;
+  bytes raw_body = 4;
+  map<string, string> headers = 5;
+  string signature = 6;
+}
+
+// -----------------------------------------------------------------------------
+//  Service
+// -----------------------------------------------------------------------------
+
+service PaymentService {
+  rpc CreateDeposit(CreateDepositRequest) returns (CreateDepositResponse);
+  rpc CreateWithdrawal(CreateWithdrawalRequest) returns (CreateWithdrawalResponse);
+  rpc GetIntent(GetIntentRequest) returns (Intent);
+  rpc ListIntents(ListIntentsRequest) returns (ListIntentsResponse);
+  rpc CancelIntent(CancelIntentRequest) returns (Intent);
+  rpc HandleWebhook(WebhookEvent) returns (Intent);
+  rpc ListAdapters(ListAdaptersRequest) returns (ListAdaptersResponse);
+}
+
+message ListAdaptersRequest {}
+
+message ListAdaptersResponse {
+  repeated AdapterInfo adapters = 1;
+}
+
+message AdapterInfo {
+  PaymentAdapter adapter = 1;
+  string name = 2;
+  bool enabled = 3;
+  bool sandbox = 4;
+  repeated string supported_fiats = 5;
+  repeated string supported_assets = 6;
+}
