@@ -1,0 +1,10 @@
+[project]
+name = "rial-ai-engine"
+version = "0.1.0"
+description = "Rial AI engine: fraud, risk, moderation, recommendations"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
