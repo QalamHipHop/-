@@ -128,7 +128,7 @@ export class UsersService {
     userId: string,
     payload: { fullName: string; dob: string; countryCode: string; documentType: string; documentNumber: string; selfieRef?: string },
   ): Promise<{ status: 'pending' | 'approved' | 'rejected'; level: number }> {
-    if (!/^[A-Z]{2}$/.test(payload.countryCode)) {
+    if (!/^[A-Z]{2}$/.test(payload.countryCode) || payload.countryCode === 'XX') {
       throw new BadRequestException({ code: 'KYC_COUNTRY_INVALID', message: 'invalid country' });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.dob)) {

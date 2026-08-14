@@ -159,7 +159,7 @@ export class WalletService {
   // ---------------------------------------------------------------------------
   //  Credit (deposit / mint / reward) — credit only, no source
   // ---------------------------------------------------------------------------
-  async credit(input: { userId: string; currency: Currency; amountMinor: string; reason: string; type: 'deposit' | 'reward' | 'launch'; meta?: Record<string, unknown>; clientId?: string; }): Promise<{ txId: string; newBalance: string }> {
+  async credit(input: { userId: string; currency: Currency; amountMinor: string; reason: string; type: 'deposit' | 'reward' | 'launch' | 'trade'; meta?: Record<string, unknown>; clientId?: string; }): Promise<{ txId: string; newBalance: string }> {
     if (BigInt(input.amountMinor) <= 0n) {
       throw new BadRequestException({ code: 'WALLET_AMOUNT_NONPOSITIVE', message: 'amount must be > 0' });
     }

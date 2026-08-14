@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Redis } from 'ioredis';
 

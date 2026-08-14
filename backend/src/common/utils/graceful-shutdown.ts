@@ -17,8 +17,7 @@ export function setupGracefulShutdown(app: INestApplicationContext): void {
     }, timeout).unref();
 
     try {
-      // @ts-expect-error: app may or may not have close()
-      await app.close?.();
+      await app.close();
       clearTimeout(force);
       logger.log('Clean shutdown complete');
       process.exit(0);

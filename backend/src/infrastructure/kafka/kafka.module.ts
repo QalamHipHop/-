@@ -25,11 +25,11 @@ export const KAFKA_PRODUCER = 'KAFKA_PRODUCER';
           brokers: cfg.brokers,
           ssl: cfg.ssl,
           sasl: cfg.saslMechanism
-            ? {
-                mechanism: cfg.saslMechanism,
+              ? {
+                mechanism: cfg.saslMechanism as 'plain' | 'scram-sha-256' | 'scram-sha-512',
                 username: cfg.saslUsername ?? '',
                 password: cfg.saslPassword ?? '',
-              }
+              } as any
             : undefined,
           logLevel: logLevel.WARN,
         });

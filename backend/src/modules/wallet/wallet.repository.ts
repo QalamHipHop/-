@@ -4,6 +4,8 @@
  */
 import { Injectable } from '@nestjs/common';
 import type { PoolClient, QueryResultRow } from 'pg';
+
+type Queryable = { query<T extends QueryResultRow = QueryResultRow>(sql: string, params?: ReadonlyArray<unknown>): Promise<{ rows: T[] }> };
 import { DbService } from '../../infrastructure/database/db.service';
 import type { Account, Balance, Transaction, AccountType, Currency, MultiSigProposal } from './wallet.types';
 
@@ -11,8 +13,8 @@ import type { Account, Balance, Transaction, AccountType, Currency, MultiSigProp
 export class WalletRepository {
   constructor(private readonly db: DbService) {}
 
-  private client(c?: PoolClient) {
-    return c ?? this.db;
+  private client(c?: PoolClient): Queryable {
+    return (c ?? this.db) as Queryable;
   }
 
   async findAccount(
@@ -165,7 +167,7 @@ export class WalletRepository {
     return r.rows;
   }
 
-  async createMultisigProposal(input: Omit<MultiSigProposal, 'status' | 'created_at'>, c?: PoolClient): Promise<MultiSigProposal> {
+  async createMultisigProposal(input: Omit<MultiSigProposal, 'id' | 'status' | 'created_at'>, c?: PoolClient): Promise<MultiSigProposal> {
     const r = await this.client(c).query<MultiSigProposal>(
       `INSERT INTO wallets.multisig_proposals (chain, to_address, amount_minor, currency, data, threshold, created_by, expires_at)
        VALUES ($1, $2, $3::bigint, $4, $5, $6, $7, $8) RETURNING *`,

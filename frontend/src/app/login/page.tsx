@@ -25,7 +25,8 @@ type FormData = z.infer<typeof schema>;
 export default function LoginPage() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get('next') || '/portfolio';
+  const requestedNext = params.get('next');
+  const next = requestedNext?.startsWith('/') && !requestedNext.startsWith('//') ? requestedNext : '/portfolio';
   const { login } = useAuth();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
@@ -40,7 +41,7 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password, data.mfaCode);
       toast({ variant: 'success', title: 'Welcome back!' });
-      router.push(next);
+      router.push(next as never);
     } catch (err) {
       const status = (err as { status?: number })?.status;
       if (status === 401 && !needsMfa) {

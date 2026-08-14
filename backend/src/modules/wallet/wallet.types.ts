@@ -3,7 +3,7 @@
  *  All amounts are passed as strings (decimal) to avoid JS number precision loss.
  *  The wallet service itself uses bigint with 8-decimal minor units internally.
  */
-import type { User } from '../auth/types';
+import type { UserPublic } from '../auth/types';
 
 export type Currency = 'RIAL' | string;
 
@@ -92,6 +92,6 @@ export interface MultiSigProposal {
 }
 
 export interface WalletSummary {
-  user: Pick<User, 'id' | 'username' | 'email'>;
+  user: Pick<UserPublic, 'id' | 'username' | 'email'>;
   accounts: Array<Account & Balance & { total_minor: string }>;
 }

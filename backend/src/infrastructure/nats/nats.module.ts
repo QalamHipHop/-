@@ -40,7 +40,7 @@ export const NATS_MANAGER = 'NATS_MANAGER';
     {
       provide: NATS_MANAGER,
       inject: [NATS_CONNECTION],
-      useFactory: (nc: NatsConnection): JetStreamManager => nc.jetstreamManager(),
+      useFactory: async (nc: NatsConnection): Promise<JetStreamManager> => nc.jetstreamManager(),
     },
   ],
   exports: [NATS_CONNECTION, NATS_JETSTREAM, NATS_MANAGER],

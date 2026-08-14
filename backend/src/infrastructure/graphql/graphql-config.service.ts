@@ -3,16 +3,16 @@
  */
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GraphqlModuleOptions, GraphqlOptionsFactory } from '@nestjs/graphql';
+import { GqlOptionsFactory } from '@nestjs/graphql';
 import { ApolloDriverConfig } from '@nestjs/apollo';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { join } from 'path';
 
 @Injectable()
-export class GraphQLConfigService implements GraphqlOptionsFactory {
+export class GraphQLConfigService implements GqlOptionsFactory {
   constructor(private readonly config: ConfigService) {}
 
-  createGraphqlOptions(): ApolloDriverConfig & GraphqlModuleOptions {
+  createGqlOptions(): ApolloDriverConfig {
     const isProd = this.config.get<string>('app.env') === 'production';
     return {
       autoSchemaFile: join(process.cwd(), 'schema.gql'),

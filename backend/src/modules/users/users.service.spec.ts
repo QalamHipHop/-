@@ -29,7 +29,14 @@ function makeRepo() {
   return {
     findById: jest.fn().mockResolvedValue(baseRow),
     listIdentities: jest.fn().mockResolvedValue([]),
-    updateProfile: jest.fn().mockResolvedValue(undefined),
+    updateProfile: jest.fn().mockImplementation(async (_userId, patch) => {
+      Object.assign(baseRow, {
+        display_name: patch.displayName,
+        avatar_url: patch.avatarUrl,
+        bio: patch.bio,
+        country_code: patch.countryCode,
+      });
+    }),
     setPreferences: jest.fn().mockResolvedValue(undefined),
     getPreferences: jest.fn().mockResolvedValue(null),
     getKycApplication: jest.fn().mockResolvedValue(null),

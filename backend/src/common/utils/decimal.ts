@@ -6,7 +6,7 @@ const DECIMALS = 8n;
 const ONE = 10n ** DECIMALS;
 
 export function toMinorUnits(amount: string | number | bigint): bigint {
-  if (typeof amount === 'bigint') return amount;
+  if (typeof amount === 'bigint') return amount * ONE;
   const s = String(amount).trim();
   if (!/^-?\d+(\.\d+)?$/.test(s)) throw new Error(`Invalid decimal: ${s}`);
   const neg = s.startsWith('-');

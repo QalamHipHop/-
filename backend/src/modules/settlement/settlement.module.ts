@@ -5,7 +5,7 @@
  *  implementation so the gateway can boot standalone for development.
  */
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { SettlementService } from './settlement.service';
 import { SettlementController } from './settlement.controller';
 import { FixedRateProvider } from './providers/fixed.provider';

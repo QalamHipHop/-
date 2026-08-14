@@ -29,7 +29,7 @@ export class AuditSinkService {
     const topic = this.config.get<KafkaConfig>('kafka')!.auditTopic;
     const payloadJson = JSON.stringify({ ...ev.payload, actor: ev.actor, action: ev.action });
     const h = createHash('sha256').update(payloadJson).digest();
-    const prev = ev.prevHash ?? this.lastHashByAgg.get(`${ev.aggregate}:${ev.aggregateId}` ?? '') ?? null;
+    const prev = ev.prevHash ?? this.lastHashByAgg.get(`${ev.aggregate}:${ev.aggregateId}`) ?? null;
     const linked = createHash('sha256').update(Buffer.concat([prev ?? Buffer.alloc(0), h])).digest();
     this.lastHashByAgg.set(`${ev.aggregate}:${ev.aggregateId}`, linked);
 

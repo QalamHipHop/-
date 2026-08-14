@@ -17,6 +17,7 @@ import { IdempotencyMiddleware } from './common/middleware/idempotency.middlewar
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { setupGracefulShutdown } from './common/utils/graceful-shutdown';
 import { bootstrapTelemetry } from './infrastructure/tracing/telemetry';
+import { REDIS_CLIENT } from './infrastructure/redis/redis.module';
 
 async function bootstrap(): Promise<void> {
   // OpenTelemetry must be initialized before any other instrumentation.
@@ -35,11 +36,11 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService);
   const logger = app.get(PinoLogger);
-  app.useLogger(logger);
+  app.useLogger(logger as any);
 
   // --- security & global pipes/filters ----------------------------------
   app.enableCors({
-    origin: config.get<string>('cors.origins', ['http://localhost:3000']),
+    origin: config.get<string[] | string>('cors.origins') ?? ['http://localhost:3000'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key', 'X-Correlation-Id'],
@@ -56,12 +57,13 @@ async function bootstrap(): Promise<void> {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter(logger));
+  app.useGlobalFilters(new GlobalExceptionFilter(logger as any));
   app.useGlobalInterceptors(new ResponseInterceptor());
 
   // --- middleware (Fastify order matters) -------------------------------
   app.use(new CorrelationIdMiddleware().use.bind(new CorrelationIdMiddleware()));
-  app.use(new IdempotencyMiddleware(config).use.bind(new IdempotencyMiddleware(config)));
+  const idempotencyMiddleware = new IdempotencyMiddleware(app.get(REDIS_CLIENT), config);
+  app.use(idempotencyMiddleware.use.bind(idempotencyMiddleware));
 
   // --- Swagger / OpenAPI -----------------------------------------------
   if (config.get<string>('app.env') !== 'production') {

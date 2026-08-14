@@ -16,8 +16,8 @@ export class CorrelationIdInterceptor implements NestInterceptor {
 
     const incoming = (req.headers['x-correlation-id'] as string | undefined) ?? (req.headers['x-request-id'] as string | undefined);
     const id = incoming || randomUUID();
-    res.setHeader?.('X-Correlation-Id', id);
+    res.header('X-Correlation-Id', id);
 
-    return next.handle().pipe(tap(() => res.setHeader?.('X-Correlation-Id', id)));
+    return next.handle().pipe(tap(() => res.header('X-Correlation-Id', id)));
   }
 }

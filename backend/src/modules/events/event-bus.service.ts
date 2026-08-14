@@ -4,7 +4,7 @@
  *  when NATS is not reachable (dev/single-node).
  */
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { JetStreamClient, StringCodec, Subscription } from 'nats';
+import { JetStreamClient, JetStreamSubscription, StringCodec } from 'nats';
 import { NATS_JETSTREAM } from '../../infrastructure/nats/nats.module';
 
 type Handler = (payload: unknown, raw: unknown) => void | Promise<void>;
@@ -14,7 +14,7 @@ export class EventBusService implements OnModuleInit {
   private readonly logger = new Logger(EventBusService.name);
   private readonly sc = StringCodec();
   private readonly localSubs = new Map<string, Set<Handler>>();
-  private readonly remoteSubs = new Map<string, Subscription>();
+  private readonly remoteSubs = new Map<string, JetStreamSubscription>();
   private jsAvailable = true;
 
   constructor(@Inject(NATS_JETSTREAM) private readonly js: JetStreamClient | null) {}
@@ -41,7 +41,7 @@ export class EventBusService implements OnModuleInit {
     this.localSubs.get(subject)!.add(handler);
     if (this.jsAvailable && this.js && !this.remoteSubs.has(subject)) {
       try {
-        const sub = await this.js.subscribe(subject);
+        const sub = await this.js.subscribe(subject, {});
         this.remoteSubs.set(subject, sub);
         (async () => {
           for await (const msg of sub) {

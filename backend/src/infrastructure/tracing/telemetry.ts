@@ -2,7 +2,7 @@
  *  OpenTelemetry bootstrap. Lazy-loaded so unit tests can run without it.
  */
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -25,7 +25,7 @@ export function bootstrapTelemetry(): void {
     : new ConsoleSpanExporter();
 
   const sdk = new NodeSDK({
-    resource: new Resource({
+    resource: resourceFromAttributes({
       [SemanticResourceAttributes.SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? 'rial-backend',
       [SemanticResourceAttributes.SERVICE_VERSION]: process.env.APP_VERSION ?? '0.1.0',
       [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV ?? 'development',

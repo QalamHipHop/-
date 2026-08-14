@@ -79,7 +79,7 @@ export default function RegisterPage() {
               {errors.confirm && <p className="text-xs text-destructive mt-1">{errors.confirm.message}</p>}
             </div>
             <p className="text-xs text-muted-foreground">
-              By signing up you agree to our <Link href="/legal/terms" className="underline">Terms</Link> and acknowledge the <Link href="/legal/risks" className="underline">Risk Disclosure</Link>.
+              By signing up you agree to our <Link href={"/legal/terms" as any} className="underline">Terms</Link> and acknowledge the <Link href={"/legal/risks" as any} className="underline">Risk Disclosure</Link>.
             </p>
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? 'Creating account…' : 'Create account'}

@@ -3,14 +3,16 @@
  *  All public methods are read/write; no business rules here.
  */
 import { Injectable } from '@nestjs/common';
-import type { PoolClient } from 'pg';
+import type { PoolClient, QueryResultRow } from 'pg';
+
+type Queryable = { query<T extends QueryResultRow = QueryResultRow>(sql: string, params?: ReadonlyArray<unknown>): Promise<{ rows: T[] }> };
 import { DbService } from '../../infrastructure/database/db.service';
 import type { Market, MarketKind, Order, OrderSide, OrderStatus, OrderTIF, OrderType, Trade } from './trading.types';
 
 @Injectable()
 export class TradingRepository {
   constructor(private readonly db: DbService) {}
-  private c(c?: PoolClient) { return c ?? this.db; }
+  private c(c?: PoolClient): Queryable { return (c ?? this.db) as Queryable; }
 
   // ---- markets ----
   async findMarket(id: string, c?: PoolClient): Promise<Market | null> {

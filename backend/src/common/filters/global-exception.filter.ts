@@ -31,7 +31,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   async catch(exception: unknown, host: ArgumentsHost): Promise<void> {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<FastifyRequest>();
-    const res = ctx.getReply<FastifyReply>();
+    const res = ctx.getResponse<FastifyReply>();
 
     const correlationId =
       (req.headers['x-correlation-id'] as string) ||
@@ -77,7 +77,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error: { code, message, details, correlationId, timestamp, path },
     };
 
-    res.setHeader('X-Correlation-Id', correlationId);
+    res.header('X-Correlation-Id', correlationId);
     res.status(status).send(body);
   }
 }
