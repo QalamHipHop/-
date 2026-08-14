@@ -4,7 +4,7 @@
 #  Multi-stage, non-root, health-checked.
 # ============================================================================
 
-ARG NODE_VERSION=20-alpine
+ARG NODE_VERSION=22-alpine
 
 # --- Stage 1: deps (cached) -----------------------------------------------
 FROM node:${NODE_VERSION} AS deps
@@ -13,7 +13,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml* ./
 COPY tsconfig*.json nest-cli.json ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile || npm install --no-audit --no-fund
+    pnpm install --no-frozen-lockfile --ignore-scripts
 
 # --- Stage 2: build --------------------------------------------------------
 FROM node:${NODE_VERSION} AS build
