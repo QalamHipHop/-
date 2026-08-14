@@ -192,6 +192,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      NATS_URL: nats://nats:4222
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: rial-backend
     ports: ["8080:8080"]
 
   frontend:
