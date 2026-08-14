@@ -13,7 +13,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml* ./
 COPY tsconfig*.json nest-cli.json ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --no-frozen-lockfile --ignore-scripts
+    pnpm install --no-frozen-lockfile --ignore-scripts --node-linker=hoisted
 
 # --- Stage 2: build --------------------------------------------------------
 FROM node:${NODE_VERSION} AS build
