@@ -26,7 +26,7 @@ export interface ErrorBody {
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: Logger = new Logger(GlobalExceptionFilter.name)) {}
+  private readonly logger = new Logger(GlobalExceptionFilter.name);
 
   async catch(exception: unknown, host: ArgumentsHost): Promise<void> {
     const ctx = host.switchToHttp();
