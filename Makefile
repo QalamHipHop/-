@@ -27,6 +27,9 @@ wizard: ## Run the configuration wizard only
 
 # ----- lifecycle -----------------------------------------------------
 
+bootstrap: ## Create env, start infrastructure, migrate, seed, and build services
+	@bash scripts/bootstrap.sh
+
 up: ## Start the full dev stack
 	$(COMPOSE) --env-file .env -f docker-compose.yml up -d
 	@echo "Stack up. UI: http://localhost:3000  API: http://localhost:8080"
