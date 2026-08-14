@@ -12,7 +12,7 @@ import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { TerminusModule } from '@nestjs/terminus';
 import { LoggerModule } from 'nestjs-pino';
 
-import { appConfig, authConfig, kafkaConfig, settlementConfig, throttleConfig } from './config';
+import { appConfig, authConfig, databaseConfig, kafkaConfig, redisConfig, settlementConfig, throttleConfig } from './config';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { NatsModule } from './infrastructure/nats/nats.module';
@@ -37,7 +37,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      load: [appConfig, authConfig, kafkaConfig, settlementConfig, throttleConfig],
+      load: [appConfig, authConfig, databaseConfig, kafkaConfig, redisConfig, settlementConfig, throttleConfig],
       validationSchema: undefined, // validated inside config factories for type-safety
     }),
     LoggerModule.forRootAsync({
