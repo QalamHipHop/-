@@ -21,13 +21,13 @@ const { Client } = require('pg');
   `);
 
   await c.query(`
-    INSERT INTO fees.schedules (scope, kind, rate_bps) VALUES
-      ('global','platform', 50),
-      ('global','creator',  30),
-      ('global','referral', 20),
-      ('global','affiliate',10),
-      ('global','burn',     5),
-      ('global','treasury',15)
+    INSERT INTO fees.schedules (id, scope, kind, rate_bps) VALUES
+      (gen_random_uuid(),'global','platform', 50),
+      (gen_random_uuid(),'global','creator',  30),
+      (gen_random_uuid(),'global','referral', 20),
+      (gen_random_uuid(),'global','affiliate',10),
+      (gen_random_uuid(),'global','burn',     5),
+      (gen_random_uuid(),'global','treasury',15)
     ON CONFLICT DO NOTHING;
   `);
 
