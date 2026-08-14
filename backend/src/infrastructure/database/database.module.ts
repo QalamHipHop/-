@@ -8,8 +8,9 @@ import { Pool, PoolClient } from 'pg';
 
 import { DatabaseConfig } from '../../config/database.config';
 import { DbService } from './db.service';
+import { PG_POOL } from './database.tokens';
 
-export const PG_POOL = 'PG_POOL';
+export { PG_POOL };
 
 @Global()
 @Module({

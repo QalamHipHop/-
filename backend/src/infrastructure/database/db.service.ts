@@ -9,7 +9,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { randomUUID, createHash } from 'crypto';
 
-import { PG_POOL } from './database.module';
+import { PG_POOL } from './database.tokens';
 
 export interface OutboxEvent {
   aggregate: string;
