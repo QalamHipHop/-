@@ -1,6 +1,6 @@
 // =============================================================================
 //  Common DTOs
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { ApiProperty } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, Min, Max } from 'class-validator';

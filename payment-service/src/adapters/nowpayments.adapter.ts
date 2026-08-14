@@ -1,6 +1,6 @@
 // =============================================================================
 //  NOWPayments adapter — crypto payment gateway
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

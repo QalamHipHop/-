@@ -1,6 +1,6 @@
 // =============================================================================
 //  REST controller (public + internal)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, UseGuards, ForbiddenException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';

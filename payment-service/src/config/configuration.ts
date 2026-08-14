@@ -1,6 +1,6 @@
 // =============================================================================
 //  payment-service — Config loader
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';

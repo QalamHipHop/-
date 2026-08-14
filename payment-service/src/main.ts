@@ -2,7 +2,7 @@
 //  payment-service bootstrap
 //  - HTTP server (REST + Swagger)
 //  - gRPC microservice for internal callers
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';

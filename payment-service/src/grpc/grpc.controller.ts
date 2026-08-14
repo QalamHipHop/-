@@ -1,6 +1,6 @@
 // =============================================================================
 //  gRPC controller — internal RIAL payment service contract
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Controller } from '@nestjs/common';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';

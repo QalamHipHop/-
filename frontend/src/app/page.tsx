@@ -19,7 +19,7 @@ export default function HomePage() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
               </span>
-              Live on mainnet · 24h volume $1.2M
+              Development environment · live data connection required
             </div>
             <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
               Launch tokens. <br />
@@ -42,9 +42,9 @@ export default function HomePage() {
               </Button>
             </div>
             <div className="grid grid-cols-3 gap-4 pt-6 border-t">
-              <Stat label="Tokens launched" value="1,284" />
-              <Stat label="Total volume" value="$48.2M" />
-              <Stat label="Graduated" value="312" />
+              <Stat label="Tokens launched" value="—" />
+              <Stat label="Total volume" value="—" />
+              <Stat label="Graduated" value="—" />
             </div>
           </div>
           <div className="relative">
@@ -61,7 +61,7 @@ export default function HomePage() {
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold mb-3">Built for serious traders</h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Sub-millisecond matching, on-chain settlement, and institutional-grade risk controls.
+            Connect the matching engine, settlement layer, and risk controls before presenting production metrics.
           </p>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

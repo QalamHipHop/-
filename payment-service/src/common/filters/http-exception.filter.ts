@@ -1,6 +1,6 @@
 // =============================================================================
 //  Global HTTP exception filter — uniform error envelope
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import {
   ArgumentsHost,

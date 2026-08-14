@@ -1,6 +1,6 @@
 // =============================================================================
 //  IntentStore — in-memory store with idempotency-key dedup, swappable for PG
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Injectable, Logger } from '@nestjs/common';
 import { PaymentIntent, IntentKind, IntentStatus } from './intent.entity';

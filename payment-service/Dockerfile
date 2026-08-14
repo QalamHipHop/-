@@ -1,6 +1,6 @@
 # =============================================================================
 #  RIAL payment-service — multi-stage Dockerfile
-#  Author: QalamCode
+#  Author: Qalamhiphop
 # =============================================================================
 FROM node:20-alpine AS deps
 WORKDIR /app

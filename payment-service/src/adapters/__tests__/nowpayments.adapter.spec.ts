@@ -1,6 +1,6 @@
 // =============================================================================
 //  Unit tests — NowPaymentsAdapter signature verification
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { NowPaymentsAdapter } from '../nowpayments.adapter';
 import { ConfigService } from '@nestjs/config';

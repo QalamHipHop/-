@@ -1,6 +1,6 @@
 // =============================================================================
 //  Unit tests — StripeAdapter signature verification
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { StripeAdapter } from '../stripe.adapter';
 import { ConfigService } from '@nestjs/config';

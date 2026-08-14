@@ -1,6 +1,6 @@
 // =============================================================================
 //  Manual adapter — operator-attested deposits/withdrawals (always available)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

@@ -1,6 +1,6 @@
 // =============================================================================
 //  AdaptersModule — DI container for all payment adapters
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Global, Module } from '@nestjs/common';
 import { ManualAdapter } from './manual.adapter';

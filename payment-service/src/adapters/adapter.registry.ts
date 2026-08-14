@@ -1,6 +1,6 @@
 // =============================================================================
 //  AdapterRegistry — central place to resolve the right adapter for a name
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Injectable } from '@nestjs/common';
 import { ManualAdapter } from './manual.adapter';

@@ -1,6 +1,6 @@
 // =============================================================================
 //  payment-service — AppModule
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';

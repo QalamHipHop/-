@@ -1,6 +1,6 @@
 // =============================================================================
 //  PaymentAdapter — common contract for all providers
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Money, PaymentKind } from './types';
 

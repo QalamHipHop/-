@@ -1,6 +1,6 @@
 // =============================================================================
 //  Unit tests — ManualAdapter
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { ManualAdapter } from '../manual.adapter';
 import { ConfigService } from '@nestjs/config';

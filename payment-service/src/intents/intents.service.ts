@@ -1,6 +1,6 @@
 // =============================================================================
 //  IntentsService — orchestrates adapter calls, persists intents, exposes state
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { APP_CONFIG } from '../config/payment-config.module';

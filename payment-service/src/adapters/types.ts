@@ -1,6 +1,6 @@
 // =============================================================================
 //  Shared adapter types
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 export type PaymentKind = 'deposit' | 'withdrawal';
 

@@ -1,6 +1,6 @@
 // =============================================================================
 //  ZarinPal adapter — Iranian fiat gateway (REST + sandbox)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

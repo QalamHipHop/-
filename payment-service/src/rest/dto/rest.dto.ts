@@ -1,6 +1,6 @@
 // =============================================================================
 //  REST DTOs with validation
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsObject, IsOptional, IsString, Length, Matches, ValidateNested } from 'class-validator';

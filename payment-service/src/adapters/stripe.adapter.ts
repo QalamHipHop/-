@@ -1,6 +1,6 @@
 // =============================================================================
 //  Stripe adapter — PaymentIntents + webhooks (HMAC-SHA256 signed)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 //  Note: uses raw https calls (no Stripe SDK) to keep deps minimal and
 //        support offline test mode via sandbox flag.
 // =============================================================================

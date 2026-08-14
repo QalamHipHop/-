@@ -1,6 +1,6 @@
 // =============================================================================
 //  Health check controller (Terminus)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckResult, HealthCheckService } from '@nestjs/terminus';

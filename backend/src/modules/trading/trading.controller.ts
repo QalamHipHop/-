@@ -39,7 +39,7 @@ class PlaceOrderDto {
   @IsOptional() @IsBoolean() postOnly?: boolean;
 }
 
-@Controller('api/trading')
+@Controller('trading')
 @UseGuards(JwtAuthGuard)
 export class TradingController {
   constructor(private readonly trading: TradingService) {}

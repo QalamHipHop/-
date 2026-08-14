@@ -1,6 +1,6 @@
 // =============================================================================
 //  Unit tests — IntentsService (idempotency, validation)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { IntentsService } from '../intents.service';
 import { IntentStore } from '../intent.store';

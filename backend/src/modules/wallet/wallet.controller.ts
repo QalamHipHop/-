@@ -47,7 +47,7 @@ class SignDto {
   @IsString() signatureHex!: string;
 }
 
-@Controller('api/wallet')
+@Controller('wallet')
 @UseGuards(JwtAuthGuard)
 export class WalletController {
   constructor(private readonly wallet: WalletService) {}

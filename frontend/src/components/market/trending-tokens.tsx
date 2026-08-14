@@ -24,15 +24,6 @@ interface TrendingToken {
   riskScore?: number;
 }
 
-const FALLBACK: TrendingToken[] = [
-  { id: '1', symbol: 'RIALS', name: 'Rial Index', price: 0.4234, change24h: 12.4, volume24h: 234567, marketCap: 4_200_000, holders: 1284, graduated: true, createdAt: new Date(Date.now() - 86400000 * 5).toISOString(), riskScore: 12 },
-  { id: '2', symbol: 'GALAXY', name: 'Galactic', price: 0.0089, change24h: -3.2, volume24h: 89432, marketCap: 890_000, holders: 712, graduated: false, createdAt: new Date(Date.now() - 86400000 * 2).toISOString(), riskScore: 28 },
-  { id: '3', symbol: 'MOON', name: 'MoonShot', price: 0.1245, change24h: 28.9, volume24h: 1456789, marketCap: 12_400_000, holders: 4521, graduated: true, createdAt: new Date(Date.now() - 86400000 * 12).toISOString(), riskScore: 8 },
-  { id: '4', symbol: 'NEON', name: 'Neon Pulse', price: 1.872, change24h: 5.6, volume24h: 543210, marketCap: 18_700_000, holders: 982, graduated: true, createdAt: new Date(Date.now() - 86400000 * 25).toISOString(), riskScore: 5 },
-  { id: '5', symbol: 'BOLT', name: 'Lightning', price: 0.0567, change24h: 15.7, volume24h: 198765, marketCap: 5_670_000, holders: 2103, graduated: false, createdAt: new Date(Date.now() - 86400000 * 3).toISOString(), riskScore: 22 },
-  { id: '6', symbol: 'PEPE2', name: 'Pepe Two', price: 0.00002, change24h: -12.1, volume24h: 678901, marketCap: 2_000_000, holders: 8765, graduated: true, createdAt: new Date(Date.now() - 86400000 * 45).toISOString(), riskScore: 45 },
-];
-
 export function TrendingTokens() {
   const { data, isLoading } = useQuery({
     queryKey: ['trending-tokens'],
@@ -40,7 +31,7 @@ export function TrendingTokens() {
       try {
         return await api.get<TrendingToken[]>('/api/tokens/trending');
       } catch {
-        return FALLBACK;
+        return [];
       }
     },
     refetchInterval: 30_000,
@@ -54,6 +45,10 @@ export function TrendingTokens() {
         ))}
       </div>
     );
+  }
+
+  if (!data?.length) {
+    return <Card><CardContent className="p-6 text-sm text-muted-foreground">No live market data is available yet. Connect the trading and analytics services to populate this section.</CardContent></Card>;
   }
 
   return (

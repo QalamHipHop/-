@@ -1,5 +1,7 @@
 # ﷼ — Production-Grade Token Launch Platform
 
+**Author:** Qalamhiphop
+
 A complete, production-grade token launch & trading platform inspired by Pump.fun, Moonshot, Raydium, Uniswap, Jupiter, Photon, and DexScreener — built with a completely new, modular microservices architecture.
 
 ## Overview

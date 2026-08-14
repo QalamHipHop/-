@@ -1,6 +1,6 @@
 // =============================================================================
 //  Domain types for payment intents (in-memory + future pg-backed store)
-//  Author: QalamCode
+//  Author: Qalamhiphop
 // =============================================================================
 import { Money, MoneyJSON, toJSON } from '../adapters/types';
 
