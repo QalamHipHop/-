@@ -40,7 +40,6 @@ class PlaceOrderDto {
 }
 
 @Controller('trading')
-@UseGuards(JwtAuthGuard)
 export class TradingController {
   constructor(private readonly trading: TradingService) {}
 
@@ -76,6 +75,7 @@ export class TradingController {
     return this.trading.createMarket(dto);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('orders')
   async placeOrder(@Req() req: any, @Body() dto: PlaceOrderDto) {
     return this.trading.placeOrder({
@@ -93,11 +93,13 @@ export class TradingController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
   @Delete('orders/:id')
   async cancelOrder(@Req() req: any, @Param('id') id: string) {
     return this.trading.cancelOrder(req.user.id, id);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('orders')
   async listOrders(@Req() req: any, @Query('marketId') marketId?: string, @Query('status') status?: string, @Query('limit') limit?: string) {
     return this.trading.listUserOrders(req.user.id, { marketId, status: status as any, limit: limit ? Number(limit) : 50 });
