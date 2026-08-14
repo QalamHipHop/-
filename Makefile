@@ -73,6 +73,20 @@ db-shell: ## Open psql
 redis-cli: ## Open redis-cli
 	$(COMPOSE) -f docker-compose.yml exec redis redis-cli
 
+# ----- verification / tests ------------------------------------------
+
+doctor: ## Verify required local tools and configuration
+	@command -v docker >/dev/null || { echo 'Docker is required. Install Docker Engine or Docker Desktop first.'; exit 1; }
+	@docker compose version >/dev/null || { echo 'Docker Compose v2 is required.'; exit 1; }
+	@test -f .env || { echo 'Missing .env. Run: cp .env.example .env'; exit 1; }
+	@$(COMPOSE) --env-file .env config >/dev/null || { echo 'docker-compose.yml is invalid or has unresolved configuration.'; exit 1; }
+	@echo 'Environment checks passed.'
+
+verify: ## Run typecheck, tests, and frontend production build
+	pnpm -r typecheck
+	pnpm -r test
+	pnpm --filter @rial/frontend build
+
 # ----- tests --------------------------------------------------------
 
 test: ## Run all tests
