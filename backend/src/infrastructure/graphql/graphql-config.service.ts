@@ -15,7 +15,7 @@ export class GraphQLConfigService implements GqlOptionsFactory {
   createGqlOptions(): ApolloDriverConfig {
     const isProd = this.config.get<string>('app.env') === 'production';
     return {
-      autoSchemaFile: join(process.cwd(), 'schema.gql'),
+      autoSchemaFile: join('/tmp', 'rial-schema.gql'),
       sortSchema: true,
       playground: false, // replaced by Apollo landing page
       introspection: !isProd,

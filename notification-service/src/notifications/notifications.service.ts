@@ -17,7 +17,7 @@ import {
   NotificationProvider,
   SendResult,
 } from './notifications.types';
-import { APP_CONFIG } from './notifications.module';
+import { APP_CONFIG } from '../config/tokens';
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
