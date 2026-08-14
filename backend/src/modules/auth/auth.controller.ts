@@ -36,7 +36,7 @@ interface AuthedRequest extends FastifyRequest {
   user?: AuthenticatedUser;
 }
 
-@Controller({ path: 'auth', version: '1' })
+@Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 

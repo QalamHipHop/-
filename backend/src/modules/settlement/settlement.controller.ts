@@ -3,7 +3,7 @@ import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs
 import { Public } from '../../common/guards/jwt-auth.guard';
 import { SettlementService } from './settlement.service';
 
-@Controller({ path: 'settlement', version: '1' })
+@Controller('settlement')
 export class SettlementController {
   constructor(private readonly svc: SettlementService) {}
 

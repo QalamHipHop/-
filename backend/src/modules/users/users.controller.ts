@@ -9,7 +9,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 
 interface AuthedRequest extends FastifyRequest { user?: AuthenticatedUser }
 
-@Controller({ path: 'users', version: '1' })
+@Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   constructor(private readonly users: UsersService) {}
