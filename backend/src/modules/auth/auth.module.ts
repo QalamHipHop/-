@@ -31,6 +31,6 @@ import { MfaService } from './mfa.service';
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthResolver, TokenService, PasswordService, SessionService, UserRepository, MfaService],
-  exports: [AuthService, TokenService, UserRepository],
+  exports: [AuthService, TokenService, UserRepository, JwtModule],
 })
 export class AuthModule {}
