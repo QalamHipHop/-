@@ -1,8 +1,5 @@
 // Package ledger implements double-entry bookkeeping for RIAL.
 
-import "encoding/json"
-var jsonMarshalImpl = json.Marshal
-//
 // Rules:
 //   - Every state change is a row in `wallet.transactions` AND a row in `shared.outbox`.
 //   - Reads of balance are guarded by an advisory lock + optimistic version check.
@@ -12,8 +9,8 @@ package ledger
 
 import (
 	"context"
+	"encoding/json"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -29,6 +26,8 @@ import (
 	"github.com/rial/wallet-service/internal/domain"
 	"github.com/rial/wallet-service/internal/event"
 )
+
+var jsonMarshalImpl = json.Marshal
 
 var (
 	ErrInsufficient     = errors.New("insufficient available balance")

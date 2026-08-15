@@ -218,8 +218,20 @@ services:
   wallet-service:
     build: { context: ./wallet-service, dockerfile: Dockerfile }
     <<: *default-restart
-    depends_on: [postgres, redis]
-    ports: ["50053:50053"]
+    depends_on: [postgres, redis, nats, kafka]
+    environment:
+      RIAL_WALLET_HTTP_ADDR: ":50053"
+      RIAL_WALLET_GRPC_ADDR: ":50059"
+      RIAL_WALLET_POSTGRES_HOST: postgres
+      RIAL_WALLET_POSTGRES_PORT: "5432"
+      RIAL_WALLET_POSTGRES_DB: ${POSTGRES_DB}
+      RIAL_WALLET_POSTGRES_USER: ${POSTGRES_USER}
+      RIAL_WALLET_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      RIAL_WALLET_REDIS_ADDR: redis:6379
+      RIAL_WALLET_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      RIAL_WALLET_NATS_SERVERS: nats://nats:4222
+      RIAL_WALLET_KAFKA_BROKERS: kafka:9092
+    ports: ["50053:50053", "50059:50059"]
 
   launchpad-service:
     build: { context: ./launchpad-service, dockerfile: Dockerfile }

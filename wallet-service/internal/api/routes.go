@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rial/wallet-service/internal/config"
+	"github.com/rial/wallet-service/internal/domain"
 	"github.com/rial/wallet-service/internal/ledger"
 )
 
@@ -166,7 +167,7 @@ func mapErrToStatus(err error) int {
 	}
 }
 
-func domainTxType(s string) ledger.TransactionType {
-	// simple cast; validation done at higher layers
-	return ledger.TransactionType(s)
+func domainTxType(s string) domain.TransactionType {
+	// Validation is performed at the HTTP boundary before this conversion.
+	return domain.TransactionType(s)
 }

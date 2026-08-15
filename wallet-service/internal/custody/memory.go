@@ -9,7 +9,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 // MemorySigner is an in-memory ECDSA signer; suitable for development & tests only.
@@ -47,6 +46,5 @@ func (m *MemorySigner) PubKey(_ context.Context, keyID string) ([]byte, error) {
 	m.mu.RUnlock()
 	if !ok { return nil, errors.New("unknown key: " + keyID) }
 	pub := elliptic.MarshalCompressed(elliptic.P256(), k.PublicKey.X, k.PublicKey.Y)
-	_ = btcec.PubKey{}
 	return pub, nil
 }

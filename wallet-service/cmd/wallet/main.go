@@ -99,7 +99,7 @@ func main() {
 	cust := custody.New(cfg.Custody)
 
 	// --- Ledger service ---
-	ledgerSvc := ledger.NewService(pg, rds, publisher, audit, cust, cfg.Settlement)
+	ledgerSvc := ledger.NewService(pg.Pool, rds, publisher, audit, cust, cfg.Settlement)
 
 	// --- HTTP server ---
 	gin.SetMode(gin.ReleaseMode)

@@ -27,7 +27,7 @@ func NewNATS(ctx context.Context, cfg config.NATSConfig) (*NATSPublisher, error)
 	if err != nil { return nil, err }
 	// ensure stream exists
 	_, err = js.AddStream(&nats.StreamConfig{
-		Name: cfg.Stream, Subjects: []string{"rial.>", Retention: nats.WorkQueuePolicy, MaxAge: 7 * 24 * time.Hour,
+		Name: cfg.Stream, Subjects: []string{"rial.>"}, Retention: nats.WorkQueuePolicy, MaxAge: 7 * 24 * time.Hour,
 			Storage: nats.FileStorage, Replicas: 1,
 		})
 	if err != nil && err != nats.ErrStreamNameAlreadyInUse { return nil, err }

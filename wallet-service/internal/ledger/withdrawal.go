@@ -84,7 +84,8 @@ func (w *WithdrawalService) Sign(ctx context.Context, withdrawalID uuid.UUID, si
 
 	if len(wd.Signers) >= wd.RequiredSigs {
 		wd.Status = domain.WithdrawalBroadcast
-		wd.TxHash = hex.EncodeToString(sha256.Sum256(append(h[:], sig...)))[:64]
+		txHash := sha256.Sum256(append(h[:], sig...))
+		wd.TxHash = hex.EncodeToString(txHash[:])
 	}
 	wd.UpdatedAt = time.Now().UTC()
 	if _, err := w.svc.pg.Exec(ctx, `UPDATE wallet.withdrawals SET signers = $1::text[], status = $2, tx_hash = $3, metadata = $4::jsonb, updated_at = $5 WHERE id = $6`,
