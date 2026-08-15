@@ -93,7 +93,7 @@ func Load() (*Config, error) {
 
 	v.SetDefault("nats.url", "nats://nats:4222")
 	v.SetDefault("kafka.brokers", []string{"kafka:9092"})
-	v.SetDefault("kafka.topic", "rial.launchpad")
+	v.SetDefault("kafka.topic", "rial.launches.v1")
 
 	v.SetDefault("jwt.secret", "change-me-in-prod")
 	v.SetDefault("jwt.issuer", "rial-auth")

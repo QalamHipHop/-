@@ -12,7 +12,7 @@
  */
 import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { JwtAuthGuard, Public } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { TradingService } from './trading.service';
 
@@ -43,27 +43,31 @@ class PlaceOrderDto {
 export class TradingController {
   constructor(private readonly trading: TradingService) {}
 
+  @Public()
   @Get('markets')
-  @Roles()
   async listMarkets(@Query('kind') kind?: string, @Query('chain') chain?: string) {
     return this.trading.listMarkets({ kind: kind as any, chain });
   }
 
+  @Public()
   @Get('markets/:id')
   async market(@Param('id') id: string) {
     return this.trading.getMarket(id);
   }
 
+  @Public()
   @Get('markets/:id/orderbook')
   async book(@Param('id') id: string, @Query('depth') depth?: string) {
     return this.trading.getOrderBook(id, depth ? Number(depth) : 20);
   }
 
+  @Public()
   @Get('markets/:id/trades')
   async trades(@Param('id') id: string, @Query('limit') limit?: string) {
     return this.trading.listTrades(id, { limit: limit ? Number(limit) : 100 });
   }
 
+  @Public()
   @Get('markets/:id/candles')
   async candles(@Param('id') id: string, @Query('interval') interval = '1m', @Query('limit') limit?: string) {
     return this.trading.getCandles(id, interval, limit ? Number(limit) : 500);

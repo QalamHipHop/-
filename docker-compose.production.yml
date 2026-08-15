@@ -1,0 +1,60 @@
+# Production overlay. Requires Docker Compose v2.24+ for !reset.
+# Run only after `scripts/validate-production-env.sh .env.production` passes:
+# docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.production.yml up -d
+services:
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  clickhouse:
+    ports: !reset []
+  elasticsearch:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  nats:
+    ports: !reset []
+  kafka:
+    ports: !reset []
+  meilisearch:
+    environment:
+      MEILI_ENV: production
+    ports: !reset []
+  otel-collector:
+    ports: !reset []
+  prometheus:
+    ports: !reset []
+  grafana:
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports: !reset []
+  loki:
+    ports: !reset []
+  backend:
+    environment:
+      NODE_ENV: production
+    ports: !reset []
+  frontend:
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_BASE_URL:?API_BASE_URL must be set in .env.production}
+    ports: !reset []
+  matching-engine:
+    ports: !reset []
+  trading-engine:
+    ports: !reset []
+  wallet-service:
+    ports: !reset []
+  launchpad-service:
+    ports: !reset []
+  payment-service:
+    ports: !reset []
+  notification-service:
+    ports: !reset []
+  analytics:
+    ports: !reset []
+  ai-engine:
+    ports: !reset []
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"

@@ -6,6 +6,7 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 
@@ -27,6 +28,27 @@ log = logging.getLogger(__name__)
 REQUEST_COUNT = Counter("ai_requests_total", "Total AI requests", ["endpoint", "kind"])
 REQUEST_LATENCY = Histogram("ai_request_seconds", "AI request latency", ["endpoint"])
 SIGNAL_COUNT = Counter("ai_signals_total", "Signals emitted", ["kind"])
+
+
+class LaunchpadTokenRiskRequest(BaseModel):
+    """Compatibility contract for the launchpad risk client."""
+
+    name: str
+    symbol: str
+    description: str = ""
+    website: str = ""
+    telegram: str = ""
+    twitter: str = ""
+    logo_url: str = ""
+
+
+class LaunchpadOrderRiskRequest(BaseModel):
+    """Compatibility contract for launchpad order checks."""
+
+    user_id: str
+    market: str
+    side: str
+    amount_minor: int
 
 
 @asynccontextmanager
@@ -55,6 +77,47 @@ def _ok(target: str, kind: str, sig: dict, threshold: float) -> ScoreResponse:
         flagged=score >= threshold,
         evidence=sig.get("evidence", {}),
     )
+
+
+@app.post("/v1/risk/token")
+async def score_launchpad_token(req: LaunchpadTokenRiskRequest) -> dict:
+    """Score a launchpad token using the production launchpad HTTP contract."""
+    t0 = time.perf_counter()
+    creator_hint = req.website or req.twitter or req.telegram or req.symbol
+    rug = rugpull_score(req.name, req.description, creator_hint)
+    text = text_moderation(f"{req.name}\n{req.symbol}\n{req.description}")
+    score = max(float(rug.get("score", 0.0)), float(text.get("score", 0.0)))
+    REQUEST_COUNT.labels(endpoint="v1/risk/token", kind="token").inc()
+    REQUEST_LATENCY.labels(endpoint="v1/risk/token").observe(time.perf_counter() - t0)
+    return {
+        "score": score,
+        "components": {
+            "rugpull": float(rug.get("score", 0.0)),
+            "text_moderation": float(text.get("score", 0.0)),
+        },
+        "raw": {"rugpull": rug.get("evidence", {}), "text": text.get("evidence", {})},
+    }
+
+
+@app.get("/v1/risk/user/{user_id}")
+async def score_launchpad_user(user_id: str) -> dict:
+    """Return an explicit neutral score until verified user-history features are wired."""
+    return {
+        "score": 0.0,
+        "components": {"history_unavailable": 1.0},
+        "raw": {"user_id": user_id, "reason": "no on-chain or ledger history adapter configured"},
+    }
+
+
+@app.post("/v1/risk/order")
+async def score_launchpad_order(req: LaunchpadOrderRiskRequest) -> dict:
+    """Return a deterministic fraud signal for the launchpad order contract."""
+    sig = fraud_score(req.user_id, req.market, float(max(req.amount_minor, 1)))
+    return {
+        "score": float(sig.get("score", 0.0)),
+        "components": {"fraud": float(sig.get("score", 0.0))},
+        "raw": sig.get("evidence", {}),
+    }
 
 
 @app.post("/score/risk", response_model=ScoreResponse)

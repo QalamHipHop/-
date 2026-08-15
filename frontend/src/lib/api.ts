@@ -15,7 +15,11 @@ export interface ApiRequestInit extends Omit<RequestInit, 'body'> {
 }
 
 function buildUrl(path: string, query?: ApiRequestInit['query']) {
-  const url = new URL(path, env.apiBaseUrl);
+  // Frontend call sites use `/api/...`; the gateway owns the versioned REST
+  // namespace at `/api/v1/...`. Normalize in one place so every client request
+  // reaches the same production contract.
+  const normalizedPath = path.startsWith('/api/') ? `/api/v1/${path.slice('/api/'.length)}` : path;
+  const url = new URL(normalizedPath, env.apiBaseUrl);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== null) url.searchParams.set(k, String(v));

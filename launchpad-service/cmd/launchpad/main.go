@@ -43,7 +43,7 @@ func main() {
 	nc, err := event.NewNats(cfg.Nats.URL, logger)
 	if err != nil { logger.Warn("nats disabled", zap.Error(err)); nc = nil }
 
-	kc, err := event.NewKafkaProducer(cfg.Kafka.Brokers, logger)
+	kc, err := event.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic, logger)
 	if err != nil { logger.Warn("kafka disabled", zap.Error(err)); kc = nil }
 
 	riskClient := risk.NewClient(cfg.AI.EngineURL, logger)

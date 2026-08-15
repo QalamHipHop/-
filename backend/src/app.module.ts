@@ -25,6 +25,9 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { SettlementModule } from './modules/settlement/settlement.module';
 import { EventsModule } from './modules/events/events.module';
+import { TradingModule } from './modules/trading/trading.module';
+import { WalletModule } from './modules/wallet/wallet.module';
+import { LaunchpadModule } from './modules/launchpad/launchpad.module';
 
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
@@ -86,6 +89,9 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     UsersModule,
     SettlementModule,
     EventsModule,
+    TradingModule,
+    WalletModule,
+    LaunchpadModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

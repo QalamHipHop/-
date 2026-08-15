@@ -18,17 +18,18 @@ type Kafka struct {
 	topic string
 }
 
-func NewKafkaProducer(brokers []string, log *zap.Logger) (*Kafka, error) {
+func NewKafkaProducer(brokers []string, topic string, log *zap.Logger) (*Kafka, error) {
 	if len(brokers) == 0 { return nil, nil }
+	if topic == "" { topic = "rial.launches.v1" }
 	w := &kafka.Writer{
 		Addr:         kafka.TCP(brokers...),
-		Topic:        "rial.launchpad",
+		Topic:        topic,
 		Balancer:     &kafka.Hash{},
 		RequiredAcks: kafka.RequireAll,
 		BatchTimeout: 50 * time.Millisecond,
 	}
-	log.Info("kafka producer ready", zap.Strings("brokers", brokers))
-	return &Kafka{w: w, log: log, topic: "rial.launchpad"}, nil
+	log.Info("kafka producer ready", zap.Strings("brokers", brokers), zap.String("topic", topic))
+	return &Kafka{w: w, log: log, topic: topic}, nil
 }
 
 func (k *Kafka) Close() error { if k == nil || k.w == nil { return nil }; return k.w.Close() }
