@@ -138,20 +138,20 @@ export class GrpcController {
   }
 
   @GrpcMethod('PaymentService', 'GetIntent')
-  getIntent(req: { intentId: string }): IntentProtoOut {
-    const i = this.intents.get(req.intentId);
+  async getIntent(req: { intentId: string }): Promise<IntentProtoOut> {
+    const i = await this.intents.get(req.intentId);
     return this.intentToProto(i);
   }
 
   @GrpcMethod('PaymentService', 'ListIntents')
-  listIntents(req: {
+  async listIntents(req: {
     userId: string;
     kind: number;
     status: number;
     page: number;
     pageSize: number;
-  }): { intents: IntentProtoOut[]; total: number } {
-    const r = this.intents.list({
+  }): Promise<{ intents: IntentProtoOut[]; total: number }> {
+    const r = await this.intents.list({
       userId: req.userId || undefined,
       kind: this.kindFromEnum(req.kind),
       status: this.statusFromEnum(req.status),

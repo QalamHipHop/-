@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
@@ -28,13 +29,19 @@ type VestingSchedule = domain.VestingSchedule
 
 func NewPostgres(ctx context.Context, dsn string, logger *zap.Logger) (*PG, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil { return nil, fmt.Errorf("parse dsn: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("parse dsn: %w", err)
+	}
 	cfg.MaxConns = 20
 	cfg.MinConns = 2
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil { return nil, fmt.Errorf("connect: %w", err) }
-	if err := pool.Ping(ctx); err != nil { return nil, fmt.Errorf("ping: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("connect: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("ping: %w", err)
+	}
 	logger.Info("postgres connected", zap.Int32("max_conns", cfg.MaxConns))
 	return &PG{Pool: pool}, nil
 }
@@ -43,9 +50,13 @@ func (p *PG) Close() { p.Pool.Close() }
 
 func (p *PG) WithTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	tx, err := p.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(tx); err != nil { return err }
+	if err := fn(tx); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }
 
@@ -77,13 +88,19 @@ func (p *PG) GetToken(ctx context.Context, id uuid.UUID) (*Token, error) {
 		&t.LogoURL, &t.BannerURL, &t.Description, &t.Website, &t.Telegram, &t.Twitter, &t.Discord, &t.GitHub,
 		&t.MintAuthority, &t.FreezeAuthority, &t.CurveModel, &t.CurveParams, &t.GraduationRialMinor,
 		&t.Graduated, &t.GraduatedAt, &t.Status, &t.CreatedAt, &t.UpdatedAt,
-	); err != nil { return nil, err }
+	); err != nil {
+		return nil, err
+	}
 	return &t, nil
 }
 
 func (p *PG) ListTokens(ctx context.Context, status string, limit, offset int) ([]*Token, error) {
-	if limit <= 0 || limit > 200 { limit = 50 }
-	if offset < 0 { offset = 0 }
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := p.Pool.Query(ctx, `SELECT id, creator_id, chain, contract_addr, name, symbol, decimals, total_supply,
 		logo_url, banner_url, description, website, telegram, twitter, discord, github,
 		mint_authority, freeze_authority, curve_model, curve_params, graduation_rial_minor,
@@ -91,7 +108,9 @@ func (p *PG) ListTokens(ctx context.Context, status string, limit, offset int) (
 		FROM launchpad.tokens
 		WHERE ($1 = '' OR status = $1)
 		ORDER BY created_at DESC LIMIT $2 OFFSET $3`, status, limit, offset)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var out []*Token
 	for rows.Next() {
@@ -100,7 +119,9 @@ func (p *PG) ListTokens(ctx context.Context, status string, limit, offset int) (
 			&t.LogoURL, &t.BannerURL, &t.Description, &t.Website, &t.Telegram, &t.Twitter, &t.Discord, &t.GitHub,
 			&t.MintAuthority, &t.FreezeAuthority, &t.CurveModel, &t.CurveParams, &t.GraduationRialMinor,
 			&t.Graduated, &t.GraduatedAt, &t.Status, &t.CreatedAt, &t.UpdatedAt,
-		); err != nil { return nil, err }
+		); err != nil {
+			return nil, err
+		}
 		out = append(out, &t)
 	}
 	return out, rows.Err()
@@ -132,7 +153,9 @@ func (p *PG) GetBonding(ctx context.Context, id uuid.UUID) (*BondingState, error
 	var b BondingState
 	if err := row.Scan(&b.TokenID, &b.SupplyCirculatingMinor, &b.ReserveRialMinor, &b.VirtualRialMinor,
 		&b.PriceRialPerTokenMinor8DP, &b.HoldersCount, &b.UpdatedAt,
-	); err != nil { return nil, err }
+	); err != nil {
+		return nil, err
+	}
 	return &b, nil
 }
 
@@ -157,6 +180,55 @@ func (p *PG) InitBonding(ctx context.Context, id uuid.UUID, supplyMinor, reserve
 	return err
 }
 
+// CreateTokenWithInitialState persists every durable component of a launch in
+// one database transaction. The advisory lock serializes the per-creator cap,
+// so simultaneous create requests cannot both pass the count check.
+func (p *PG) CreateTokenWithInitialState(ctx context.Context, t *Token, virtualReserveMinor int64, vesting []*VestingSchedule, maxTokensPerCreator int) error {
+	return p.WithTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, t.CreatorID.String()); err != nil {
+			return fmt.Errorf("lock creator launch quota: %w", err)
+		}
+
+		var count int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM launchpad.tokens WHERE creator_id=$1 AND status NOT IN ('rejected','draft')`, t.CreatorID).Scan(&count); err != nil {
+			return fmt.Errorf("count creator launches: %w", err)
+		}
+		if count >= maxTokensPerCreator {
+			return fmt.Errorf("LAUNCHPAD_MAX_TOKENS_PER_CREATOR (=%d) reached", maxTokensPerCreator)
+		}
+
+		const insertToken = `INSERT INTO launchpad.tokens
+			(id, creator_id, chain, contract_addr, name, symbol, decimals, total_supply,
+			 logo_url, banner_url, description, website, telegram, twitter, discord, github,
+			 mint_authority, freeze_authority, curve_model, curve_params, graduation_rial_minor, status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`
+		if _, err := tx.Exec(ctx, insertToken,
+			t.ID, t.CreatorID, t.Chain, t.ContractAddress, t.Name, t.Symbol, t.Decimals, t.TotalSupply,
+			t.LogoURL, t.BannerURL, t.Description, t.Website, t.Telegram, t.Twitter, t.Discord, t.GitHub,
+			t.MintAuthority, t.FreezeAuthority, t.CurveModel, t.CurveParams, t.GraduationRialMinor, t.Status,
+		); err != nil {
+			return fmt.Errorf("insert token: %w", err)
+		}
+
+		const insertBonding = `INSERT INTO launchpad.bonding_state
+			(token_id, supply_circulating_minor, reserve_rial_minor, virtual_rial_minor, price_rial_per_token_minor_8dp, holders_count)
+			VALUES ($1,0,0,$2,0,0)`
+		if _, err := tx.Exec(ctx, insertBonding, t.ID, virtualReserveMinor); err != nil {
+			return fmt.Errorf("insert bonding state: %w", err)
+		}
+
+		const insertVesting = `INSERT INTO launchpad.vesting_schedules
+			(id, token_id, beneficiary, total_minor, released_minor, cliff_seconds, duration_seconds, start_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`
+		for _, v := range vesting {
+			if _, err := tx.Exec(ctx, insertVesting, v.ID, v.TokenID, v.Beneficiary, v.TotalMinor, v.ReleasedMinor, v.CliffSeconds, v.DurationSeconds, v.StartAt); err != nil {
+				return fmt.Errorf("insert vesting schedule: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
 // ---- holders ----
 
 func (p *PG) AddHolderDelta(ctx context.Context, tokenID, userID uuid.UUID, deltaMinor int64) error {
@@ -165,9 +237,80 @@ func (p *PG) AddHolderDelta(ctx context.Context, tokenID, userID uuid.UUID, delt
 		ON CONFLICT (token_id, user_id) DO UPDATE
 		SET balance_minor = launchpad.holders.balance_minor + EXCLUDED.balance_minor`
 	_, err := p.Pool.Exec(ctx, q, tokenID, userID, deltaMinor)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = p.Pool.Exec(ctx, `UPDATE launchpad.bonding_state SET holders_count = (SELECT count(*) FROM launchpad.holders WHERE token_id=$1 AND balance_minor > 0) WHERE token_id=$1`, tokenID)
 	return err
+}
+
+var ErrTradeRequestExists = errors.New("trade request already exists")
+
+// ApplyTradeState commits the token ownership delta, curve state, holder count,
+// and immutable idempotency result together. It is deliberately a single
+// transaction because wallet settlement can be compensated but partial launch
+// state cannot be made safe after the fact.
+func (p *PG) ApplyTradeState(ctx context.Context, tokenID, userID uuid.UUID, holderDelta int64, next *BondingState, clientID string, result *domain.BuyResult) error {
+	return p.WithTx(ctx, func(tx pgx.Tx) error {
+		var holder Holder
+		if holderDelta > 0 {
+			if err := tx.QueryRow(ctx, `INSERT INTO launchpad.holders (token_id, user_id, balance_minor, first_bought_at)
+				VALUES ($1,$2,$3,now())
+				ON CONFLICT (token_id, user_id) DO UPDATE
+				SET balance_minor = launchpad.holders.balance_minor + EXCLUDED.balance_minor
+				RETURNING token_id, user_id, balance_minor, first_bought_at`, tokenID, userID, holderDelta).
+				Scan(&holder.TokenID, &holder.UserID, &holder.BalanceMinor, &holder.FirstBoughtAt); err != nil {
+				return fmt.Errorf("apply holder credit: %w", err)
+			}
+		} else if holderDelta < 0 {
+			if err := tx.QueryRow(ctx, `UPDATE launchpad.holders
+				SET balance_minor = balance_minor + $3
+				WHERE token_id=$1 AND user_id=$2 AND balance_minor + $3 >= 0
+				RETURNING token_id, user_id, balance_minor, first_bought_at`, tokenID, userID, holderDelta).
+				Scan(&holder.TokenID, &holder.UserID, &holder.BalanceMinor, &holder.FirstBoughtAt); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return errors.New("INSUFFICIENT_TOKEN_BALANCE")
+				}
+				return fmt.Errorf("apply holder debit: %w", err)
+			}
+		} else {
+			return errors.New("holder delta must be non-zero")
+		}
+
+		const upsertBonding = `INSERT INTO launchpad.bonding_state
+			(token_id, supply_circulating_minor, reserve_rial_minor, virtual_rial_minor, price_rial_per_token_minor_8dp, holders_count, updated_at)
+			VALUES ($1,$2,$3,$4,$5::numeric,0,now())
+			ON CONFLICT (token_id) DO UPDATE
+			SET supply_circulating_minor=EXCLUDED.supply_circulating_minor,
+			    reserve_rial_minor=EXCLUDED.reserve_rial_minor,
+			    virtual_rial_minor=EXCLUDED.virtual_rial_minor,
+			    price_rial_per_token_minor_8dp=EXCLUDED.price_rial_per_token_minor_8dp,
+			    updated_at=now()`
+		if _, err := tx.Exec(ctx, upsertBonding, next.TokenID, next.SupplyCirculatingMinor, next.ReserveRialMinor, next.VirtualRialMinor, next.PriceRialPerTokenMinor8DP); err != nil {
+			return fmt.Errorf("apply bonding state: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM launchpad.holders WHERE token_id=$1 AND balance_minor>0`, tokenID).Scan(&next.HoldersCount); err != nil {
+			return fmt.Errorf("count holders: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE launchpad.bonding_state SET holders_count=$2 WHERE token_id=$1`, tokenID, next.HoldersCount); err != nil {
+			return fmt.Errorf("set holder count: %w", err)
+		}
+
+		result.NewBonding = *next
+		result.NewHolder = holder
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("encode trade result: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO launchpad.trade_requests (token_id, user_id, client_id, result) VALUES ($1,$2,$3,$4::jsonb)`, tokenID, userID, clientID, raw); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return ErrTradeRequestExists
+			}
+			return fmt.Errorf("create trade request: %w", err)
+		}
+		return nil
+	})
 }
 
 func (p *PG) GetHolder(ctx context.Context, tokenID, userID uuid.UUID) (*Holder, error) {
@@ -175,7 +318,9 @@ func (p *PG) GetHolder(ctx context.Context, tokenID, userID uuid.UUID) (*Holder,
 	row := p.Pool.QueryRow(ctx, q, tokenID, userID)
 	var h Holder
 	if err := row.Scan(&h.TokenID, &h.UserID, &h.BalanceMinor, &h.FirstBoughtAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) { return nil, nil }
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &h, nil
@@ -186,16 +331,24 @@ func (p *PG) GetHolder(ctx context.Context, tokenID, userID uuid.UUID) (*Holder,
 func (p *PG) GetTradeRequest(ctx context.Context, tokenID, userID uuid.UUID, clientID string) (*domain.BuyResult, bool, error) {
 	var raw []byte
 	err := p.Pool.QueryRow(ctx, `SELECT result FROM launchpad.trade_requests WHERE token_id=$1 AND user_id=$2 AND client_id=$3`, tokenID, userID, clientID).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) { return nil, false, nil }
-	if err != nil { return nil, false, err }
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
 	var result domain.BuyResult
-	if err := json.Unmarshal(raw, &result); err != nil { return nil, false, fmt.Errorf("decode trade request: %w", err) }
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, false, fmt.Errorf("decode trade request: %w", err)
+	}
 	return &result, true, nil
 }
 
 func (p *PG) CreateTradeRequest(ctx context.Context, tokenID, userID uuid.UUID, clientID string, result *domain.BuyResult) error {
 	raw, err := json.Marshal(result)
-	if err != nil { return fmt.Errorf("encode trade request: %w", err) }
+	if err != nil {
+		return fmt.Errorf("encode trade request: %w", err)
+	}
 	_, err = p.Pool.Exec(ctx, `INSERT INTO launchpad.trade_requests (token_id, user_id, client_id, result) VALUES ($1,$2,$3,$4::jsonb)`, tokenID, userID, clientID, raw)
 	return err
 }
@@ -214,7 +367,9 @@ func (p *PG) ListVestingDue(ctx context.Context, now time.Time) ([]*VestingSched
 		FROM launchpad.vesting_schedules
 		WHERE released_minor < total_minor
 		  AND (start_at + make_interval(secs => cliff_seconds)) <= $1`, now)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 	var out []*VestingSchedule
 	for rows.Next() {

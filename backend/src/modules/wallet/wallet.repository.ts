@@ -88,10 +88,11 @@ export class WalletRepository {
           SET available_minor = available_minor + $1::bigint,
               updated_at = now()
         WHERE account_id = $2
+          AND available_minor + $1::bigint >= 0
         RETURNING account_id, available_minor::text, pending_minor::text, reserved_minor::text, updated_at`,
       [deltaMinor, accountId],
     );
-    if (!r.rows[0]) throw new Error(`Balance row missing for account ${accountId}`);
+    if (!r.rows[0]) throw new Error('INSUFFICIENT_AVAILABLE');
     return r.rows[0];
   }
 

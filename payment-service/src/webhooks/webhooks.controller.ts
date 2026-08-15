@@ -43,13 +43,13 @@ export class WebhooksController {
     const a = this.registry.get(adapter);
     try {
       const verify = await a.parseWebhook(raw, headers, signature);
-      const existing = this.intents.findByExternalId(adapter, verify.externalId);
+      const existing = await this.intents.findByExternalId(adapter, verify.externalId);
       if (!existing) {
         // No intent — accept and ignore (provider may send test events).
         return { ok: true, intent: null };
       }
       const status = this.mapStatus(verify.status);
-      const updated = this.intents.applyVerifyResult(
+      const updated = await this.intents.applyVerifyResult(
         existing.id,
         status,
         verify.settledAmount,

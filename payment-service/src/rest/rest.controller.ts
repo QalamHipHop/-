@@ -58,19 +58,19 @@ export class RestController {
 
   @Get('intents/:id')
   @ApiOperation({ summary: 'Get an intent by id' })
-  getIntent(@Param('id') id: string): IntentJSON {
+  async getIntent(@Param('id') id: string): Promise<IntentJSON> {
     return this.intents.get(id);
   }
 
   @Get('intents')
   @ApiOperation({ summary: 'List intents' })
-  listIntents(
+  async listIntents(
     @Query('userId') userId?: string,
     @Query('kind') kind?: IntentKind,
     @Query('status') status?: IntentStatus,
     @Query() page: PaginationDto = { page: 1, pageSize: 50 } as PaginationDto,
-  ): { items: IntentJSON[]; total: number; page: number; pageSize: number } {
-    const r = this.intents.list({ userId, kind, status, page: page.page, pageSize: page.pageSize });
+  ): Promise<{ items: IntentJSON[]; total: number; page: number; pageSize: number }> {
+    const r = await this.intents.list({ userId, kind, status, page: page.page, pageSize: page.pageSize });
     return { items: r.items, total: r.total, page: page.page, pageSize: page.pageSize };
   }
 

@@ -42,6 +42,7 @@ export interface AppConfig {
   defaultAdapter: string;
   defaultFiat: string;
   internalToken: string;
+  databaseUrl: string;
   corsOrigins: string[];
   logLevel: string;
   limits: {
@@ -84,6 +85,7 @@ export const configuration = (): AppConfig => ({
   defaultAdapter: process.env['PAYMENT_DEFAULT_ADAPTER'] ?? 'manual',
   defaultFiat: process.env['PAYMENT_DEFAULT_FIAT'] ?? 'USD',
   internalToken: process.env['PAYMENT_INTERNAL_TOKEN'] ?? 'change-me',
+  databaseUrl: process.env['PAYMENT_DATABASE_URL'] ?? process.env['DATABASE_URL'] ?? '',
   corsOrigins: (process.env['PAYMENT_CORS_ORIGINS'] ?? '*')
     .split(',')
     .map((s) => s.trim())

@@ -3,14 +3,15 @@ package launch
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
-	"crypto/sha256"
-	"encoding/hex"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -26,16 +27,16 @@ import (
 )
 
 type Service struct {
-	cfg       *config.Config
-	pg        *store.PG
-	rd        *store.RD
-	nc        *event.Nats
-	kc        *event.Kafka
-	risk      *risk.Client
-	wallet    *wallet.Client
-	curve     *curve.Engine
-	grad      *graduation.Service
-	log       *zap.Logger
+	cfg    *config.Config
+	pg     *store.PG
+	rd     *store.RD
+	nc     *event.Nats
+	kc     *event.Kafka
+	risk   *risk.Client
+	wallet *wallet.Client
+	curve  *curve.Engine
+	grad   *graduation.Service
+	log    *zap.Logger
 }
 
 func NewService(
@@ -49,52 +50,56 @@ func NewService(
 
 // CreateTokenInput — validated externally.
 type CreateTokenInput struct {
-	Name              string
-	Symbol            string
-	Decimals          int
-	TotalSupply       string
-	Chain             string
-	ContractAddress   string
-	LogoURL           string
-	BannerURL         string
-	Description       string
-	Website           string
-	Telegram          string
-	Twitter           string
-	Discord           string
-	GitHub            string
-	MintAuthority     string
-	FreezeAuthority   string
-	CurveModel        string
-	CurveParams       json.RawMessage
+	Name                string
+	Symbol              string
+	Decimals            int
+	TotalSupply         string
+	Chain               string
+	ContractAddress     string
+	LogoURL             string
+	BannerURL           string
+	Description         string
+	Website             string
+	Telegram            string
+	Twitter             string
+	Discord             string
+	GitHub              string
+	MintAuthority       string
+	FreezeAuthority     string
+	CurveModel          string
+	CurveParams         json.RawMessage
 	GraduationRialMinor int64
-	Vesting           []VestingInput
+	Vesting             []VestingInput
 }
 
 type VestingInput struct {
-	Beneficiary     string `json:"beneficiary"`
-	TotalMinor      int64  `json:"total_minor"`
-	CliffSeconds    int    `json:"cliff_seconds"`
-	DurationSeconds int    `json:"duration_seconds"`
+	Beneficiary     string    `json:"beneficiary"`
+	TotalMinor      int64     `json:"total_minor"`
+	CliffSeconds    int       `json:"cliff_seconds"`
+	DurationSeconds int       `json:"duration_seconds"`
 	StartAt         time.Time `json:"start_at"`
 }
 
 func (s *Service) Create(ctx context.Context, creatorID uuid.UUID, in CreateTokenInput) (*domain.Token, error) {
-	if err := s.validateCreateInput(in); err != nil { return nil, err }
-
-	// creator rate-limit
-	count, err := s.pg.CountCreatorTokens(ctx, creatorID)
-	if err != nil { return nil, err }
-	if count >= s.cfg.Launchpad.MaxTokensPerCreator {
-		return nil, fmt.Errorf("LAUNCHPAD_MAX_TOKENS_PER_CREATOR (=%d) reached", s.cfg.Launchpad.MaxTokensPerCreator)
+	if err := s.validateCreateInput(in); err != nil {
+		return nil, err
 	}
 
-	// model validation
+	// Model validation happens before the single durable creation transaction.
 	model, err := curve.ParseModel(in.CurveModel)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	params := curve.DefaultParams()
-	if len(in.CurveParams) > 0 { params, err = curve.DecodeParams(in.CurveParams); if err != nil { return nil, err } }
-	if err := s.curve.Validate(model, params); err != nil { return nil, err }
+	if len(in.CurveParams) > 0 {
+		params, err = curve.DecodeParams(in.CurveParams)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := s.curve.Validate(model, params); err != nil {
+		return nil, err
+	}
 
 	// AI risk gate
 	if s.cfg.Launchpad.RiskAIEnabled {
@@ -102,7 +107,9 @@ func (s *Service) Create(ctx context.Context, creatorID uuid.UUID, in CreateToke
 			Name: in.Name, Symbol: in.Symbol, Description: in.Description,
 			Website: in.Website, Telegram: in.Telegram, Twitter: in.Twitter, LogoURL: in.LogoURL,
 		})
-		if err != nil { s.log.Warn("risk ai failed, continuing", zap.Error(err)) } else if rs.Score > 0.85 {
+		if err != nil {
+			s.log.Warn("risk ai failed, continuing", zap.Error(err))
+		} else if rs.Score > 0.85 {
 			return nil, fmt.Errorf("RISK_REJECTED: token failed AI risk gate (score=%.2f)", rs.Score)
 		}
 	}
@@ -118,17 +125,27 @@ func (s *Service) Create(ctx context.Context, creatorID uuid.UUID, in CreateToke
 		CurveModel: string(model), CurveParams: curve.EncodeParams(params),
 		GraduationRialMinor: in.GraduationRialMinor, Status: domain.TokenPending,
 	}
-	if err := s.pg.CreateToken(ctx, t); err != nil { return nil, err }
-	if err := s.pg.InitBonding(ctx, id, 0, 0, params.VirtualRial); err != nil { return nil, err }
-
+	vesting := make([]*domain.VestingSchedule, 0, len(in.Vesting))
 	for _, v := range in.Vesting {
 		ben, err := uuid.Parse(v.Beneficiary)
-		if err != nil { return nil, fmt.Errorf("invalid vesting beneficiary: %w", err) }
-		vs := &domain.VestingSchedule{
-			ID: uuid.New(), TokenID: id, Beneficiary: ben, TotalMinor: v.TotalMinor,
-			CliffSeconds: v.CliffSeconds, DurationSeconds: v.DurationSeconds, StartAt: v.StartAt,
+		if err != nil {
+			return nil, fmt.Errorf("INVALID_VESTING_BENEFICIARY: %w", err)
 		}
-		if err := s.pg.CreateVesting(ctx, vs); err != nil { return nil, err }
+		if v.TotalMinor <= 0 || v.CliffSeconds < 0 || v.DurationSeconds <= 0 || v.StartAt.IsZero() {
+			return nil, errors.New("INVALID_VESTING_SCHEDULE")
+		}
+		vesting = append(vesting, &domain.VestingSchedule{
+			ID:              uuid.New(),
+			TokenID:         id,
+			Beneficiary:     ben,
+			TotalMinor:      v.TotalMinor,
+			CliffSeconds:    v.CliffSeconds,
+			DurationSeconds: v.DurationSeconds,
+			StartAt:         v.StartAt,
+		})
+	}
+	if err := s.pg.CreateTokenWithInitialState(ctx, t, params.VirtualRial, vesting, s.cfg.Launchpad.MaxTokensPerCreator); err != nil {
+		return nil, err
 	}
 
 	// publish & audit
@@ -139,21 +156,31 @@ func (s *Service) Create(ctx context.Context, creatorID uuid.UUID, in CreateToke
 
 func (s *Service) Approve(ctx context.Context, adminID, tokenID uuid.UUID) error {
 	tk, err := s.pg.GetToken(ctx, tokenID)
-	if err != nil { return err }
-	if tk.Status == domain.TokenGraduated { return errors.New("ALREADY_GRADUATED") }
-	if err := s.pg.UpdateTokenStatus(ctx, tokenID, string(domain.TokenLive)); err != nil { return err }
+	if err != nil {
+		return err
+	}
+	if tk.Status == domain.TokenGraduated {
+		return errors.New("ALREADY_GRADUATED")
+	}
+	if err := s.pg.UpdateTokenStatus(ctx, tokenID, string(domain.TokenLive)); err != nil {
+		return err
+	}
 	s.nc.Publish(ctx, "launchpad.token.approved", map[string]any{"token_id": tokenID.String(), "by": adminID.String()})
 	return nil
 }
 
 func (s *Service) Reject(ctx context.Context, adminID, tokenID uuid.UUID, reason string) error {
-	if err := s.pg.UpdateTokenStatus(ctx, tokenID, string(domain.TokenRejected)); err != nil { return err }
+	if err := s.pg.UpdateTokenStatus(ctx, tokenID, string(domain.TokenRejected)); err != nil {
+		return err
+	}
 	s.nc.Publish(ctx, "launchpad.token.rejected", map[string]any{"token_id": tokenID.String(), "by": adminID.String(), "reason": reason})
 	return nil
 }
 
 func (s *Service) Pause(ctx context.Context, adminID, tokenID uuid.UUID, reason string) error {
-	if err := s.pg.UpdateTokenStatus(ctx, tokenID, string(domain.TokenPaused)); err != nil { return err }
+	if err := s.pg.UpdateTokenStatus(ctx, tokenID, string(domain.TokenPaused)); err != nil {
+		return err
+	}
 	s.nc.Publish(ctx, "launchpad.token.paused", map[string]any{"token_id": tokenID.String(), "by": adminID.String(), "reason": reason})
 	return nil
 }
@@ -170,27 +197,43 @@ func (s *Service) List(ctx context.Context, status string, limit, offset int) ([
 
 func (s *Service) QuoteBuy(ctx context.Context, tokenID uuid.UUID, rialInMinor int64) (*domain.BuyQuote, error) {
 	tk, st, err := s.tokenAndState(ctx, tokenID)
-	if err != nil { return nil, err }
-	if tk.Status != domain.TokenLive { return nil, errors.New("TOKEN_NOT_LIVE") }
+	if err != nil {
+		return nil, err
+	}
+	if tk.Status != domain.TokenLive {
+		return nil, errors.New("TOKEN_NOT_LIVE")
+	}
 	model := curve.Model(tk.CurveModel)
 	cs := &curve.State{SupplyMinor: st.SupplyCirculatingMinor, ReserveMinor: st.ReserveRialMinor, VirtualMinor: st.VirtualRialMinor, Params: curve.MustParams(tk.CurveParams)}
 	out, fee, newSup, newRes, err := s.curve.QuoteBuy(cs, model, rialInMinor)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
+	newPrice, err := cs.SpotPriceFor(model, newSup)
+	if err != nil {
+		return nil, err
+	}
 	willGrad := (newRes + cs.VirtualMinor) >= tk.GraduationRialMinor
 	return &domain.BuyQuote{
 		Token: *tk, AmountInMinor: rialInMinor, AmountOutMinor: out, FeeMinor: fee,
-		PriceImpactBps: int(priceImpactBps(cs, model, rialInMinor)),
+		PriceImpactBps:  int(priceImpactBps(cs, model, rialInMinor)),
 		NewReserveMinor: newRes, NewSupplyMinor: newSup,
-		NewPrice: "0", // filled by caller
+		NewPrice:     strconv.FormatFloat(newPrice, 'f', 8, 64),
 		WillGraduate: willGrad,
 	}, nil
 }
 
 func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMinor int64, clientID string) (*domain.BuyResult, error) {
-	if strings.TrimSpace(clientID) == "" { return nil, errors.New("CLIENT_ID_REQUIRED") }
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("CLIENT_ID_REQUIRED")
+	}
 	tk, st, err := s.tokenAndState(ctx, tokenID)
-	if err != nil { return nil, err }
-	if tk.Status != domain.TokenLive { return nil, errors.New("TOKEN_NOT_LIVE") }
+	if err != nil {
+		return nil, err
+	}
+	if tk.Status != domain.TokenLive {
+		return nil, errors.New("TOKEN_NOT_LIVE")
+	}
 
 	// idempotency by clientID
 	if clientID != "" {
@@ -205,13 +248,19 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 	model := curve.Model(tk.CurveModel)
 	cs := &curve.State{SupplyMinor: st.SupplyCirculatingMinor, ReserveMinor: st.ReserveRialMinor, VirtualMinor: st.VirtualRialMinor, Params: curve.MustParams(tk.CurveParams)}
 	out, fee, newSup, newRes, err := s.curve.QuoteBuy(cs, model, rialInMinor)
-	if err != nil { return nil, err }
-	if out == 0 { return nil, errors.New("ZERO_OUTPUT") }
+	if err != nil {
+		return nil, err
+	}
+	if out == 0 {
+		return nil, errors.New("ZERO_OUTPUT")
+	}
 
 	// Settlement must be recorded in the wallet ledger before ownership changes.
 	// The key is deterministic, so a client retry cannot debit the same order twice.
 	release, err := s.rd.AcquireLock(ctx, "buy:"+tokenID.String(), 5*time.Second)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer func() { _ = release() }()
 
 	requestID := "buy:" + clientID
@@ -229,26 +278,58 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 		"token_out_minor": out, "fee_minor": fee,
 	}
 	walletTxID, err := s.wallet.Debit(ctx, userID.String(), rialInMinor, settlementRef, settlementKey, settlementMeta)
-	if err != nil { return nil, fmt.Errorf("SETTLEMENT_DEBIT_FAILED: %w", err) }
-	refund := func(cause error) error {
+	if err != nil {
+		return nil, fmt.Errorf("SETTLEMENT_DEBIT_FAILED: %w", err)
+	}
+
+	// The gross debit is split into redeemable curve liquidity and a treasury fee.
+	// Every leg has a deterministic idempotency key so compensation is retry-safe.
+	netReserve := rialInMinor - fee
+	reserveCredited, treasuryCredited := false, false
+	if _, err := s.wallet.CreditReserve(ctx, netReserve, settlementRef, "reserve-"+settlementKey, settlementMeta); err != nil {
 		_, refundErr := s.wallet.Refund(ctx, userID.String(), rialInMinor, settlementRef, "refund-"+settlementKey, settlementMeta)
 		if refundErr != nil {
-			s.log.Error("wallet refund after failed buy state update", zap.Error(refundErr), zap.Error(cause), zap.String("trade_id", tradeID.String()))
-			return fmt.Errorf("%w; settlement refund failed: %v", cause, refundErr)
+			return nil, fmt.Errorf("%w; buyer refund failed: %v", err, refundErr)
+		}
+		return nil, fmt.Errorf("RESERVE_CREDIT_FAILED: %w", err)
+	}
+	reserveCredited = true
+	if fee > 0 {
+		if _, err := s.wallet.CreditTreasury(ctx, fee, settlementRef, "treasury-"+settlementKey, settlementMeta); err != nil {
+			_, reserveErr := s.wallet.DebitReserve(ctx, netReserve, settlementRef, "reserve-reversal-"+settlementKey, settlementMeta)
+			_, refundErr := s.wallet.Refund(ctx, userID.String(), rialInMinor, settlementRef, "refund-"+settlementKey, settlementMeta)
+			if reserveErr != nil || refundErr != nil {
+				return nil, fmt.Errorf("%w; fee compensation failed reserve=%v refund=%v", err, reserveErr, refundErr)
+			}
+			return nil, fmt.Errorf("TREASURY_CREDIT_FAILED: %w", err)
+		}
+		treasuryCredited = true
+	}
+	refund := func(cause error) error {
+		var rollbackErrs []error
+		if treasuryCredited {
+			if _, err := s.wallet.DebitTreasury(ctx, fee, settlementRef, "treasury-reversal-"+settlementKey, settlementMeta); err != nil {
+				rollbackErrs = append(rollbackErrs, err)
+			}
+		}
+		if reserveCredited {
+			if _, err := s.wallet.DebitReserve(ctx, netReserve, settlementRef, "reserve-reversal-"+settlementKey, settlementMeta); err != nil {
+				rollbackErrs = append(rollbackErrs, err)
+			}
+		}
+		if _, err := s.wallet.Refund(ctx, userID.String(), rialInMinor, settlementRef, "refund-"+settlementKey, settlementMeta); err != nil {
+			rollbackErrs = append(rollbackErrs, err)
+		}
+		if len(rollbackErrs) > 0 {
+			s.log.Error("wallet compensation after failed buy state update", zap.Errors("rollback_errors", rollbackErrs), zap.Error(cause), zap.String("trade_id", tradeID.String()))
+			return fmt.Errorf("%w; settlement compensation failed: %v", cause, rollbackErrs)
 		}
 		return cause
 	}
 
-	if err := s.pg.AddHolderDelta(ctx, tokenID, userID, out); err != nil { return nil, refund(err) }
 	newState := *st
 	newState.SupplyCirculatingMinor = newSup
 	newState.ReserveRialMinor = newRes
-	newState.HoldersCount = st.HoldersCount
-	if err := s.pg.UpsertBonding(ctx, &newState); err != nil {
-		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, -out)
-		return nil, refund(err)
-	}
-
 	res := &domain.BuyResult{
 		Quote: domain.BuyQuote{
 			Token: *tk, AmountInMinor: rialInMinor, AmountOutMinor: out, FeeMinor: fee,
@@ -257,10 +338,12 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 		TradeID: tradeID, TxHash: walletTxID,
 		NewBonding: newState, ExecutedAt: time.Now(),
 	}
-	if h, _ := s.pg.GetHolder(ctx, tokenID, userID); h != nil { res.NewHolder = *h }
-	if err := s.pg.CreateTradeRequest(ctx, tokenID, userID, requestID, res); err != nil {
-		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, -out)
-		_ = s.pg.UpsertBonding(ctx, st)
+	if err := s.pg.ApplyTradeState(ctx, tokenID, userID, out, &newState, requestID, res); err != nil {
+		if errors.Is(err, store.ErrTradeRequestExists) {
+			if existing, found, getErr := s.pg.GetTradeRequest(ctx, tokenID, userID, requestID); getErr == nil && found {
+				return existing, nil
+			}
+		}
 		return nil, refund(err)
 	}
 
@@ -275,17 +358,29 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 }
 
 func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInMinor int64, clientID string) (*domain.BuyResult, error) {
-	if strings.TrimSpace(clientID) == "" { return nil, errors.New("CLIENT_ID_REQUIRED") }
+	if strings.TrimSpace(clientID) == "" {
+		return nil, errors.New("CLIENT_ID_REQUIRED")
+	}
 	tk, st, err := s.tokenAndState(ctx, tokenID)
-	if err != nil { return nil, err }
-	if tk.Status != domain.TokenLive { return nil, errors.New("TOKEN_NOT_LIVE") }
+	if err != nil {
+		return nil, err
+	}
+	if tk.Status != domain.TokenLive {
+		return nil, errors.New("TOKEN_NOT_LIVE")
+	}
 	model := curve.Model(tk.CurveModel)
 	cs := &curve.State{SupplyMinor: st.SupplyCirculatingMinor, ReserveMinor: st.ReserveRialMinor, VirtualMinor: st.VirtualRialMinor, Params: curve.MustParams(tk.CurveParams)}
 	out, fee, newSup, newRes, err := s.curve.QuoteSell(cs, model, tokensInMinor)
-	if err != nil { return nil, err }
-	if out <= 0 { return nil, errors.New("ZERO_OUTPUT") }
+	if err != nil {
+		return nil, err
+	}
+	if out <= 0 {
+		return nil, errors.New("ZERO_OUTPUT")
+	}
 	release, err := s.rd.AcquireLock(ctx, "sell:"+tokenID.String(), 5*time.Second)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer func() { _ = release() }()
 
 	requestID := "sell:" + clientID
@@ -295,8 +390,12 @@ func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInM
 		return existing, nil
 	}
 	holder, err := s.pg.GetHolder(ctx, tokenID, userID)
-	if err != nil { return nil, err }
-	if holder == nil || holder.BalanceMinor < tokensInMinor { return nil, errors.New("INSUFFICIENT_TOKEN_BALANCE") }
+	if err != nil {
+		return nil, err
+	}
+	if holder == nil || holder.BalanceMinor < tokensInMinor {
+		return nil, errors.New("INSUFFICIENT_TOKEN_BALANCE")
+	}
 
 	tradeID := uuid.New()
 	settlementKey := settlementKey("sell", tokenID, userID, clientID)
@@ -305,24 +404,66 @@ func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInM
 		"token_id": tokenID.String(), "trade_id": tradeID.String(),
 		"token_in_minor": tokensInMinor, "fee_minor": fee,
 	}
+	// Remove the gross curve area from reserve before paying the seller. Net
+	// proceeds are credited to the seller; the retained fee is credited to treasury.
+	grossReserveDebit := out + fee
+	reserveDebited, treasuryCredited := false, false
+	if _, err := s.wallet.DebitReserve(ctx, grossReserveDebit, settlementRef, "reserve-"+settlementKey, settlementMeta); err != nil {
+		return nil, fmt.Errorf("RESERVE_DEBIT_FAILED: %w", err)
+	}
+	reserveDebited = true
+	if fee > 0 {
+		if _, err := s.wallet.CreditTreasury(ctx, fee, settlementRef, "treasury-"+settlementKey, settlementMeta); err != nil {
+			_, reserveErr := s.wallet.CreditReserve(ctx, grossReserveDebit, settlementRef, "reserve-reversal-"+settlementKey, settlementMeta)
+			if reserveErr != nil {
+				return nil, fmt.Errorf("%w; reserve restoration failed: %v", err, reserveErr)
+			}
+			return nil, fmt.Errorf("TREASURY_CREDIT_FAILED: %w", err)
+		}
+		treasuryCredited = true
+	}
 	walletTxID, err := s.wallet.CreditTrade(ctx, userID.String(), out, settlementRef, settlementKey, settlementMeta)
-	if err != nil { return nil, fmt.Errorf("SETTLEMENT_CREDIT_FAILED: %w", err) }
+	if err != nil {
+		var rollbackErrs []error
+		if treasuryCredited {
+			if _, e := s.wallet.DebitTreasury(ctx, fee, settlementRef, "treasury-reversal-"+settlementKey, settlementMeta); e != nil {
+				rollbackErrs = append(rollbackErrs, e)
+			}
+		}
+		if reserveDebited {
+			if _, e := s.wallet.CreditReserve(ctx, grossReserveDebit, settlementRef, "reserve-reversal-"+settlementKey, settlementMeta); e != nil {
+				rollbackErrs = append(rollbackErrs, e)
+			}
+		}
+		if len(rollbackErrs) > 0 {
+			return nil, fmt.Errorf("SETTLEMENT_CREDIT_FAILED: %w; compensation failed: %v", err, rollbackErrs)
+		}
+		return nil, fmt.Errorf("SETTLEMENT_CREDIT_FAILED: %w", err)
+	}
 	reversePayout := func(cause error) error {
-		_, reverseErr := s.wallet.Debit(ctx, userID.String(), out, settlementRef, "reversal-"+settlementKey, settlementMeta)
-		if reverseErr != nil {
-			s.log.Error("wallet debit after failed sell state update", zap.Error(reverseErr), zap.Error(cause), zap.String("trade_id", tradeID.String()))
-			return fmt.Errorf("%w; settlement reversal failed: %v", cause, reverseErr)
+		var rollbackErrs []error
+		if _, err := s.wallet.Debit(ctx, userID.String(), out, settlementRef, "reversal-"+settlementKey, settlementMeta); err != nil {
+			rollbackErrs = append(rollbackErrs, err)
+		}
+		if treasuryCredited {
+			if _, err := s.wallet.DebitTreasury(ctx, fee, settlementRef, "treasury-reversal-"+settlementKey, settlementMeta); err != nil {
+				rollbackErrs = append(rollbackErrs, err)
+			}
+		}
+		if reserveDebited {
+			if _, err := s.wallet.CreditReserve(ctx, grossReserveDebit, settlementRef, "reserve-reversal-"+settlementKey, settlementMeta); err != nil {
+				rollbackErrs = append(rollbackErrs, err)
+			}
+		}
+		if len(rollbackErrs) > 0 {
+			s.log.Error("wallet compensation after failed sell state update", zap.Errors("rollback_errors", rollbackErrs), zap.Error(cause), zap.String("trade_id", tradeID.String()))
+			return fmt.Errorf("%w; settlement reversal failed: %v", cause, rollbackErrs)
 		}
 		return cause
 	}
-	if err := s.pg.AddHolderDelta(ctx, tokenID, userID, -tokensInMinor); err != nil { return nil, reversePayout(err) }
 	newState := *st
 	newState.SupplyCirculatingMinor = newSup
 	newState.ReserveRialMinor = newRes
-	if err := s.pg.UpsertBonding(ctx, &newState); err != nil {
-		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, tokensInMinor)
-		return nil, reversePayout(err)
-	}
 	res := &domain.BuyResult{
 		Quote: domain.BuyQuote{
 			Token: *tk, AmountInMinor: tokensInMinor, AmountOutMinor: out, FeeMinor: fee,
@@ -330,10 +471,12 @@ func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInM
 		},
 		TradeID: tradeID, TxHash: walletTxID, NewBonding: newState, ExecutedAt: time.Now(),
 	}
-	if h, _ := s.pg.GetHolder(ctx, tokenID, userID); h != nil { res.NewHolder = *h }
-	if err := s.pg.CreateTradeRequest(ctx, tokenID, userID, requestID, res); err != nil {
-		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, tokensInMinor)
-		_ = s.pg.UpsertBonding(ctx, st)
+	if err := s.pg.ApplyTradeState(ctx, tokenID, userID, -tokensInMinor, &newState, requestID, res); err != nil {
+		if errors.Is(err, store.ErrTradeRequestExists) {
+			if existing, found, getErr := s.pg.GetTradeRequest(ctx, tokenID, userID, requestID); getErr == nil && found {
+				return existing, nil
+			}
+		}
 		return nil, reversePayout(err)
 	}
 	s.nc.Publish(ctx, "launchpad.sell", res)
@@ -345,25 +488,57 @@ func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInM
 
 func (s *Service) tokenAndState(ctx context.Context, id uuid.UUID) (*domain.Token, *domain.BondingState, error) {
 	t, err := s.pg.GetToken(ctx, id)
-	if err != nil { return nil, nil, err }
+	if err != nil {
+		return nil, nil, err
+	}
 	bs, err := s.pg.GetBonding(ctx, id)
-	if err != nil { return nil, nil, err }
+	if err != nil {
+		return nil, nil, err
+	}
 	return t, bs, nil
 }
 
 func (s *Service) validateCreateInput(in CreateTokenInput) error {
-	if strings.TrimSpace(in.Name) == "" { return errors.New("NAME_REQUIRED") }
-	if !validSymbol(in.Symbol) { return errors.New("INVALID_SYMBOL") }
-	if in.Decimals < 0 || in.Decimals > 18 { return errors.New("DECIMALS_OUT_OF_RANGE") }
-	if in.TotalSupply == "" || in.TotalSupply == "0" { return errors.New("TOTAL_SUPPLY_REQUIRED") }
-	if in.Chain == "" { in.Chain = "solana" }
-	if in.ContractAddress == "" { return errors.New("CONTRACT_ADDRESS_REQUIRED") }
-	if in.GraduationRialMinor <= 0 { in.GraduationRialMinor = s.cfg.Launchpad.GraduationMinor }
-	if in.LogoURL != "" { if _, err := url.Parse(in.LogoURL); err != nil { return errors.New("INVALID_LOGO_URL") } }
+	if strings.TrimSpace(in.Name) == "" {
+		return errors.New("NAME_REQUIRED")
+	}
+	if !validSymbol(in.Symbol) {
+		return errors.New("INVALID_SYMBOL")
+	}
+	if in.Decimals < 0 || in.Decimals > 18 {
+		return errors.New("DECIMALS_OUT_OF_RANGE")
+	}
+	if in.TotalSupply == "" || in.TotalSupply == "0" {
+		return errors.New("TOTAL_SUPPLY_REQUIRED")
+	}
+	if in.Chain == "" {
+		in.Chain = "solana"
+	}
+	if in.ContractAddress == "" {
+		return errors.New("CONTRACT_ADDRESS_REQUIRED")
+	}
+	if in.GraduationRialMinor <= 0 {
+		in.GraduationRialMinor = s.cfg.Launchpad.GraduationMinor
+	}
+	if in.LogoURL != "" {
+		if _, err := url.Parse(in.LogoURL); err != nil {
+			return errors.New("INVALID_LOGO_URL")
+		}
+	}
 	return nil
 }
 
-func validSymbol(s string) bool { if len(s) < 2 || len(s) > 12 { return false }; for _, c := range s { if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) { return false } }; return true }
+func validSymbol(s string) bool {
+	if len(s) < 2 || len(s) > 12 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}
 
 func settlementKey(side string, tokenID, userID uuid.UUID, clientID string) string {
 	input := side + "|" + tokenID.String() + "|" + userID.String() + "|" + clientID
@@ -371,14 +546,25 @@ func settlementKey(side string, tokenID, userID uuid.UUID, clientID string) stri
 	return "lp-" + hex.EncodeToString(digest[:])
 }
 
-func nilIfEmpty(s string) *string { if s == "" { return nil }; return &s }
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
 
 func priceImpactBps(s *curve.State, m curve.Model, rialInMinor int64) int {
-	if rialInMinor <= 0 { return 0 }
-	before, _ := s.SpotPriceFor(s.SupplyMinor)
+	if rialInMinor <= 0 {
+		return 0
+	}
+	before, _ := s.SpotPriceFor(m, s.SupplyMinor)
 	out, _, _, _, _ := (&curve.Engine{}).QuoteBuy(s, m, rialInMinor)
-	if out == 0 { return 0 }
-	after, _ := s.SpotPriceFor(s.SupplyMinor + out)
-	if before <= 0 { return 0 }
+	if out == 0 {
+		return 0
+	}
+	after, _ := s.SpotPriceFor(m, s.SupplyMinor+out)
+	if before <= 0 {
+		return 0
+	}
 	return int((after - before) / before * 10_000)
 }

@@ -59,6 +59,29 @@ func (c *Client) Refund(ctx context.Context, userID string, amount int64, refere
 	return c.credit(ctx, userID, amount, "refund", reference, idempotencyKey, metadata)
 }
 
+func (c *Client) CreditReserve(ctx context.Context, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.postInternal(ctx, "/v1/internal/reserve/credit", amount, "trade", reference, idempotencyKey, metadata)
+}
+
+func (c *Client) DebitReserve(ctx context.Context, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.postInternal(ctx, "/v1/internal/reserve/debit", amount, "trade", reference, idempotencyKey, metadata)
+}
+
+func (c *Client) CreditTreasury(ctx context.Context, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.postInternal(ctx, "/v1/internal/treasury/credit", amount, "fee", reference, idempotencyKey, metadata)
+}
+
+func (c *Client) DebitTreasury(ctx context.Context, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.postInternal(ctx, "/v1/internal/treasury/debit", amount, "fee", reference, idempotencyKey, metadata)
+}
+
+func (c *Client) postInternal(ctx context.Context, path string, amount int64, transactionType, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.post(ctx, path, ledgerRequest{
+		Amount: amount, Type: transactionType, Reference: reference,
+		IdempotencyKey: idempotencyKey, Metadata: metadata,
+	})
+}
+
 func (c *Client) credit(ctx context.Context, userID string, amount int64, transactionType, reference, idempotencyKey string, metadata map[string]any) (string, error) {
 	return c.post(ctx, "/v1/credit", ledgerRequest{
 		UserID: userID, Amount: amount, Type: transactionType, Reference: reference,
