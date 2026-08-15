@@ -14,6 +14,11 @@ export class ClickHouseService implements OnModuleInit, OnModuleDestroy {
   private readonly cfg = loadConfig().clickhouse;
 
   async onModuleInit(): Promise<void> {
+    this.ensureClient();
+  }
+
+  private ensureClient(): void {
+    if (this.client) return;
     this.client = createClient({
       url: this.cfg.url,
       database: this.cfg.database,
@@ -30,10 +35,12 @@ export class ClickHouseService implements OnModuleInit, OnModuleDestroy {
   }
 
   ping(): Promise<{ success: boolean }> {
+    this.ensureClient();
     return this.client.ping();
   }
 
   async query<T = unknown>(sql: string, params?: Record<string, unknown>): Promise<T[]> {
+    this.ensureClient();
     const rs = await this.client.query({
       query: sql,
       query_params: params,
@@ -43,6 +50,7 @@ export class ClickHouseService implements OnModuleInit, OnModuleDestroy {
   }
 
   async insert<T extends object>(table: string, rows: T[]): Promise<void> {
+    this.ensureClient();
     if (rows.length === 0) return;
     await this.client.insert({
       table,
@@ -52,6 +60,7 @@ export class ClickHouseService implements OnModuleInit, OnModuleDestroy {
   }
 
   async exec(sql: string): Promise<void> {
+    this.ensureClient();
     await this.client.command({ query: sql });
   }
 }

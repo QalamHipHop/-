@@ -22,7 +22,7 @@ import { loadConfig } from './config/config';
     ResolversModule,
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'schema.gql'),
+      autoSchemaFile: join('/tmp', 'analytics-schema.gql'),
       sortSchema: true,
       playground: loadConfig().nodeEnv !== 'production',
       subscriptions: {

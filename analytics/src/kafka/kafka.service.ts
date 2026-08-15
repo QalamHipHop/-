@@ -12,6 +12,11 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
   private readonly cfg = loadConfig().kafka;
 
   onModuleInit(): void {
+    this.ensureKafka();
+  }
+
+  private ensureKafka(): void {
+    if (this.kafka) return;
     this.kafka = new Kafka({
       clientId: this.cfg.clientId,
       brokers: this.cfg.brokers,
@@ -25,6 +30,7 @@ export class KafkaService implements OnModuleInit, OnModuleDestroy {
   }
 
   async subscribe(topic: string, groupSuffix: string, handler: Handler): Promise<void> {
+    this.ensureKafka();
     const consumer = this.kafka.consumer({ groupId: `${this.cfg.groupId}-${groupSuffix}` });
     await consumer.connect();
     await consumer.subscribe({ topic, fromBeginning: false });

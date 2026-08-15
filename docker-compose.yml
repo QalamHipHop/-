@@ -262,7 +262,18 @@ services:
   analytics:
     build: { context: ./analytics, dockerfile: Dockerfile }
     <<: *default-restart
-    depends_on: [clickhouse, postgres, redis]
+    depends_on: [clickhouse, postgres, redis, kafka, nats]
+    environment:
+      ANALYTICS_PORT: "50057"
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: rial-analytics
+      KAFKA_GROUP_ID: rial-analytics-consumers
+      NATS_URL: nats://nats:4222
     ports: ["50057:50057"]
 
   ai-engine:
