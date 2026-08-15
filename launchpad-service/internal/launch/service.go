@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"crypto/sha256"
+	"encoding/hex"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -20,6 +22,7 @@ import (
 	"github.com/rial/launchpad-service/internal/graduation"
 	"github.com/rial/launchpad-service/internal/risk"
 	"github.com/rial/launchpad-service/internal/store"
+	"github.com/rial/launchpad-service/internal/wallet"
 )
 
 type Service struct {
@@ -29,6 +32,7 @@ type Service struct {
 	nc        *event.Nats
 	kc        *event.Kafka
 	risk      *risk.Client
+	wallet    *wallet.Client
 	curve     *curve.Engine
 	grad      *graduation.Service
 	log       *zap.Logger
@@ -37,10 +41,10 @@ type Service struct {
 func NewService(
 	cfg *config.Config,
 	pg *store.PG, rd *store.RD, nc *event.Nats, kc *event.Kafka,
-	riskClient *risk.Client, curveEngine *curve.Engine,
+	riskClient *risk.Client, walletClient *wallet.Client, curveEngine *curve.Engine,
 	grad *graduation.Service, log *zap.Logger,
 ) *Service {
-	return &Service{cfg: cfg, pg: pg, rd: rd, nc: nc, kc: kc, risk: riskClient, curve: curveEngine, grad: grad, log: log}
+	return &Service{cfg: cfg, pg: pg, rd: rd, nc: nc, kc: kc, risk: riskClient, wallet: walletClient, curve: curveEngine, grad: grad, log: log}
 }
 
 // CreateTokenInput — validated externally.
@@ -183,6 +187,7 @@ func (s *Service) QuoteBuy(ctx context.Context, tokenID uuid.UUID, rialInMinor i
 }
 
 func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMinor int64, clientID string) (*domain.BuyResult, error) {
+	if strings.TrimSpace(clientID) == "" { return nil, errors.New("CLIENT_ID_REQUIRED") }
 	tk, st, err := s.tokenAndState(ctx, tokenID)
 	if err != nil { return nil, err }
 	if tk.Status != domain.TokenLive { return nil, errors.New("TOKEN_NOT_LIVE") }
@@ -203,28 +208,60 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 	if err != nil { return nil, err }
 	if out == 0 { return nil, errors.New("ZERO_OUTPUT") }
 
-	// settle: backend wallet-service debits user Rial, credits system, then we credit user tokens
-	// We delegate that to the gRPC wallet-client in production; here we just write the bonding state.
+	// Settlement must be recorded in the wallet ledger before ownership changes.
+	// The key is deterministic, so a client retry cannot debit the same order twice.
 	release, err := s.rd.AcquireLock(ctx, "buy:"+tokenID.String(), 5*time.Second)
 	if err != nil { return nil, err }
 	defer func() { _ = release() }()
 
-	if err := s.pg.AddHolderDelta(ctx, tokenID, userID, out); err != nil { return nil, err }
+	if existing, found, err := s.pg.GetTradeRequest(ctx, tokenID, userID, clientID); err != nil {
+		return nil, err
+	} else if found {
+		return existing, nil
+	}
+
+	tradeID := uuid.New()
+	settlementKey := settlementKey("buy", tokenID, userID, clientID)
+	settlementRef := "launchpad-buy:" + tradeID.String()
+	settlementMeta := map[string]any{
+		"token_id": tokenID.String(), "trade_id": tradeID.String(),
+		"token_out_minor": out, "fee_minor": fee,
+	}
+	walletTxID, err := s.wallet.Debit(ctx, userID.String(), rialInMinor, settlementRef, settlementKey, settlementMeta)
+	if err != nil { return nil, fmt.Errorf("SETTLEMENT_DEBIT_FAILED: %w", err) }
+	refund := func(cause error) error {
+		_, refundErr := s.wallet.Credit(ctx, userID.String(), rialInMinor, settlementRef, "refund-"+settlementKey, settlementMeta)
+		if refundErr != nil {
+			s.log.Error("wallet refund after failed buy state update", zap.Error(refundErr), zap.Error(cause), zap.String("trade_id", tradeID.String()))
+			return fmt.Errorf("%w; settlement refund failed: %v", cause, refundErr)
+		}
+		return cause
+	}
+
+	if err := s.pg.AddHolderDelta(ctx, tokenID, userID, out); err != nil { return nil, refund(err) }
 	newState := *st
 	newState.SupplyCirculatingMinor = newSup
 	newState.ReserveRialMinor = newRes
 	newState.HoldersCount = st.HoldersCount
-	if err := s.pg.UpsertBonding(ctx, &newState); err != nil { return nil, err }
+	if err := s.pg.UpsertBonding(ctx, &newState); err != nil {
+		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, -out)
+		return nil, refund(err)
+	}
 
 	res := &domain.BuyResult{
 		Quote: domain.BuyQuote{
 			Token: *tk, AmountInMinor: rialInMinor, AmountOutMinor: out, FeeMinor: fee,
 			NewReserveMinor: newRes, NewSupplyMinor: newSup, WillGraduate: newRes+cs.VirtualMinor >= tk.GraduationRialMinor,
 		},
-		TradeID: uuid.New(), TxHash: "0x" + uuid.NewString(),
+		TradeID: tradeID, TxHash: walletTxID,
 		NewBonding: newState, ExecutedAt: time.Now(),
 	}
 	if h, _ := s.pg.GetHolder(ctx, tokenID, userID); h != nil { res.NewHolder = *h }
+	if err := s.pg.CreateTradeRequest(ctx, tokenID, userID, clientID, res); err != nil {
+		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, -out)
+		_ = s.pg.UpsertBonding(ctx, st)
+		return nil, refund(err)
+	}
 
 	s.nc.Publish(ctx, "launchpad.buy", res)
 	s.kc.Audit(ctx, tokenID.String(), res)
@@ -288,6 +325,12 @@ func (s *Service) validateCreateInput(in CreateTokenInput) error {
 }
 
 func validSymbol(s string) bool { if len(s) < 2 || len(s) > 12 { return false }; for _, c := range s { if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) { return false } }; return true }
+
+func settlementKey(side string, tokenID, userID uuid.UUID, clientID string) string {
+	input := side + "|" + tokenID.String() + "|" + userID.String() + "|" + clientID
+	digest := sha256.Sum256([]byte(input))
+	return "lp-" + hex.EncodeToString(digest[:])
+}
 
 func nilIfEmpty(s string) *string { if s == "" { return nil }; return &s }
 

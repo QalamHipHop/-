@@ -20,6 +20,7 @@ type Config struct {
 	Kafka     KFK    `mapstructure:"kafka"`
 	JWT       JWT    `mapstructure:"jwt"`
 	AI        AI     `mapstructure:"ai"`
+	Wallet    Wallet `mapstructure:"wallet"`
 	Launchpad LPD    `mapstructure:"launchpad"`
 }
 
@@ -52,6 +53,10 @@ type JWT struct {
 type AI struct {
 	EngineURL string        `mapstructure:"engine_url"`
 	Timeout   time.Duration `mapstructure:"timeout"`
+}
+type Wallet struct {
+	BaseURL string        `mapstructure:"base_url"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 type LPD struct {
 	VirtualReserveMinor int64   `mapstructure:"virtual_reserve_minor"`
@@ -96,6 +101,8 @@ func Load() (*Config, error) {
 
 	v.SetDefault("ai.engine_url", "http://ai-engine:8088")
 	v.SetDefault("ai.timeout", "5s")
+	v.SetDefault("wallet.base_url", "http://wallet-service:50053")
+	v.SetDefault("wallet.timeout", "5s")
 
 	v.SetDefault("launchpad.virtual_reserve_minor", int64(30_000_000_000))
 	v.SetDefault("launchpad.real_reserve_minor", int64(0))

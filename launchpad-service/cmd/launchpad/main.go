@@ -20,6 +20,7 @@ import (
 	"github.com/rial/launchpad-service/internal/middleware"
 	"github.com/rial/launchpad-service/internal/risk"
 	"github.com/rial/launchpad-service/internal/store"
+	"github.com/rial/launchpad-service/internal/wallet"
 )
 
 func main() {
@@ -46,9 +47,10 @@ func main() {
 	if err != nil { logger.Warn("kafka disabled", zap.Error(err)); kc = nil }
 
 	riskClient := risk.NewClient(cfg.AI.EngineURL, logger)
+	walletClient := wallet.NewClient(cfg.Wallet)
 	curveEngine := curve.NewEngine(logger)
 	gradSvc := graduation.NewService(cfg, curveEngine, pg, rd, nc, logger)
-	launchSvc := launch.NewService(cfg, pg, rd, nc, kc, riskClient, curveEngine, gradSvc, logger)
+	launchSvc := launch.NewService(cfg, pg, rd, nc, kc, riskClient, walletClient, curveEngine, gradSvc, logger)
 
 	srv := api.NewServer(launchSvc, gradSvc, logger)
 	httpSrv := &http.Server{

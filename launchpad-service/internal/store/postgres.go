@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -144,7 +145,6 @@ func (p *PG) UpsertBonding(ctx context.Context, b *BondingState) error {
 		    reserve_rial_minor=EXCLUDED.reserve_rial_minor,
 		    virtual_rial_minor=EXCLUDED.virtual_rial_minor,
 		    price_rial_per_token_minor_8dp=EXCLUDED.price_rial_per_token_minor_8dp,
-		    holders_count=EXCLUDED.holders_count,
 		    updated_at=now()`
 	_, err := p.Pool.Exec(ctx, q, b.TokenID, b.SupplyCirculatingMinor, b.ReserveRialMinor, b.VirtualRialMinor, b.PriceRialPerTokenMinor8DP, b.HoldersCount)
 	return err
@@ -166,7 +166,7 @@ func (p *PG) AddHolderDelta(ctx context.Context, tokenID, userID uuid.UUID, delt
 		SET balance_minor = launchpad.holders.balance_minor + EXCLUDED.balance_minor`
 	_, err := p.Pool.Exec(ctx, q, tokenID, userID, deltaMinor)
 	if err != nil { return err }
-	_, err = p.Pool.Exec(ctx, `UPDATE launchpad.bonding_state SET holders_count = (SELECT count(*) FROM launchpad.holders WHERE token_id=$1) WHERE token_id=$1`, tokenID)
+	_, err = p.Pool.Exec(ctx, `UPDATE launchpad.bonding_state SET holders_count = (SELECT count(*) FROM launchpad.holders WHERE token_id=$1 AND balance_minor > 0) WHERE token_id=$1`, tokenID)
 	return err
 }
 
@@ -179,6 +179,25 @@ func (p *PG) GetHolder(ctx context.Context, tokenID, userID uuid.UUID) (*Holder,
 		return nil, err
 	}
 	return &h, nil
+}
+
+// ---- idempotent trade requests ----
+
+func (p *PG) GetTradeRequest(ctx context.Context, tokenID, userID uuid.UUID, clientID string) (*domain.BuyResult, bool, error) {
+	var raw []byte
+	err := p.Pool.QueryRow(ctx, `SELECT result FROM launchpad.trade_requests WHERE token_id=$1 AND user_id=$2 AND client_id=$3`, tokenID, userID, clientID).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) { return nil, false, nil }
+	if err != nil { return nil, false, err }
+	var result domain.BuyResult
+	if err := json.Unmarshal(raw, &result); err != nil { return nil, false, fmt.Errorf("decode trade request: %w", err) }
+	return &result, true, nil
+}
+
+func (p *PG) CreateTradeRequest(ctx context.Context, tokenID, userID uuid.UUID, clientID string, result *domain.BuyResult) error {
+	raw, err := json.Marshal(result)
+	if err != nil { return fmt.Errorf("encode trade request: %w", err) }
+	_, err = p.Pool.Exec(ctx, `INSERT INTO launchpad.trade_requests (token_id, user_id, client_id, result) VALUES ($1,$2,$3,$4::jsonb)`, tokenID, userID, clientID, raw)
+	return err
 }
 
 // ---- vesting ----

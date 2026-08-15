@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+API="http://localhost:50054"
+WALLET="http://localhost:50053"
+ADMIN_ID="$(sudo docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT id FROM auth.users ORDER BY created_at ASC LIMIT 1"' | tr -d '\r' | tail -n1)"
+if [[ ! "$ADMIN_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+  echo "No seeded auth user is available for integration verification" >&2
+  exit 1
+fi
+
+RUN_ID="$(date -u +%Y%m%d%H%M%S)"
+SYMBOL="Q$(date -u +%s | tail -c 7)"
+ARTIFACT_DIR="/tmp/qalam-e2e-${RUN_ID}"
+mkdir -p "$ARTIFACT_DIR"
+
+curl -fsS "$API/healthz" >"$ARTIFACT_DIR/launchpad-health.json"
+curl -fsS "$WALLET/readyz" >"$ARTIFACT_DIR/wallet-ready.json"
+
+# This is a development-ledger credit, performed through the real wallet API.
+# It is deliberately recorded as a testnet integration reference and not treated as fiat settlement.
+curl -fsS -X POST "$WALLET/v1/credit" \
+  -H 'Content-Type: application/json' \
+  -d "{\"user_id\":\"$ADMIN_ID\",\"amount\":500000000,\"type\":\"deposit\",\"reference\":\"devnet-integration-$RUN_ID\",\"idempotency_key\":\"credit-$RUN_ID\",\"metadata\":{\"environment\":\"development\",\"purpose\":\"launchpad-ledger-verification\"}}" \
+  >"$ARTIFACT_DIR/wallet-credit.json"
+
+curl -fsS -X POST "$API/api/v1/tokens" \
+  -H 'Content-Type: application/json' \
+  -d "{\"creator_id\":\"$ADMIN_ID\",\"name\":\"Qalam Ledger Verification $RUN_ID\",\"symbol\":\"$SYMBOL\",\"decimals\":8,\"total_supply\":\"100000000000000000\",\"chain\":\"solana-devnet\",\"contract_address\":\"pending-testnet-mint-$RUN_ID\",\"description\":\"Development integration verification for Qalamhiphop wallet-settled launch flow.\",\"curve_model\":\"sigmoid\",\"graduation_rial_minor\":69000000000}" \
+  >"$ARTIFACT_DIR/token-created.json"
+
+TOKEN_ID="$(grep -oE '"id":"[0-9a-fA-F-]{36}"' "$ARTIFACT_DIR/token-created.json" | head -n1 | cut -d'"' -f4)"
+if [[ ! "$TOKEN_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+  cat "$ARTIFACT_DIR/token-created.json" >&2
+  echo "Token creation did not return a token id" >&2
+  exit 1
+fi
+
+curl -fsS -X POST "$API/api/v1/tokens/$TOKEN_ID/approve" \
+  -H 'Content-Type: application/json' \
+  -d "{\"actor_id\":\"$ADMIN_ID\"}" \
+  >"$ARTIFACT_DIR/token-approved.json"
+
+curl -fsS -X POST "$API/api/v1/tokens/$TOKEN_ID/quote-buy" \
+  -H 'Content-Type: application/json' \
+  -d '{"amount_in_minor":100000000}' \
+  >"$ARTIFACT_DIR/buy-quote.json"
+
+curl -fsS -X POST "$API/api/v1/tokens/$TOKEN_ID/buy" \
+  -H 'Content-Type: application/json' \
+  -d "{\"user_id\":\"$ADMIN_ID\",\"amount_in_minor\":100000000,\"client_id\":\"buy-$RUN_ID\"}" \
+  >"$ARTIFACT_DIR/buy-result.json"
+
+curl -fsS "$WALLET/v1/accounts/$ADMIN_ID/transactions?limit=10" >"$ARTIFACT_DIR/wallet-transactions.json"
+curl -fsS "$API/api/v1/tokens/$TOKEN_ID" >"$ARTIFACT_DIR/token-final.json"
+
+printf 'ADMIN_ID=%s\nTOKEN_ID=%s\nSYMBOL=%s\nARTIFACT_DIR=%s\n' "$ADMIN_ID" "$TOKEN_ID" "$SYMBOL" "$ARTIFACT_DIR"
