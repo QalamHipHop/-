@@ -201,6 +201,7 @@ services:
       NATS_SERVERS: nats://nats:4222
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: rial-backend
+      LAUNCHPAD_INTERNAL_TOKEN: ${LAUNCHPAD_INTERNAL_TOKEN:?LAUNCHPAD_INTERNAL_TOKEN is required}
     ports: ["8080:8080"]
 
   frontend:
@@ -237,6 +238,7 @@ services:
       RIAL_WALLET_REDIS_PASSWORD: ${REDIS_PASSWORD}
       RIAL_WALLET_NATS_SERVERS: nats://nats:4222
       RIAL_WALLET_KAFKA_BROKERS: kafka:9092
+      RIAL_WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?WALLET_INTERNAL_TOKEN is required}
     ports: ["50053:50053", "50059:50059"]
 
   launchpad-service:
@@ -245,6 +247,7 @@ services:
     depends_on: [postgres, redis, nats, kafka, ai-engine, wallet-service]
     environment:
       LAUNCHPAD_HTTP_PORT: "50054"
+      LAUNCHPAD_INTERNAL_TOKEN: ${LAUNCHPAD_INTERNAL_TOKEN:?LAUNCHPAD_INTERNAL_TOKEN is required}
       LAUNCHPAD_POSTGRES_DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       LAUNCHPAD_REDIS_ADDR: redis:6379
       LAUNCHPAD_REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -252,6 +255,7 @@ services:
       LAUNCHPAD_KAFKA_BROKERS: kafka:9092
       LAUNCHPAD_AI_ENGINE_URL: http://ai-engine:50058
       LAUNCHPAD_WALLET_BASE_URL: http://wallet-service:50053
+      LAUNCHPAD_WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?WALLET_INTERNAL_TOKEN is required}
     ports: ["50054:50054"]
 
   payment-service:

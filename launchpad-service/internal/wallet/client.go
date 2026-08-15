@@ -14,8 +14,9 @@ import (
 )
 
 type Client struct {
-	baseURL string
-	http    *http.Client
+	baseURL       string
+	internalToken string
+	http          *http.Client
 }
 
 type ledgerRequest struct {
@@ -37,8 +38,9 @@ func NewClient(cfg config.Wallet) *Client {
 		timeout = 5 * time.Second
 	}
 	return &Client{
-		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
-		http:    &http.Client{Timeout: timeout},
+		baseURL:       strings.TrimRight(cfg.BaseURL, "/"),
+		internalToken: cfg.InternalToken,
+		http:          &http.Client{Timeout: timeout},
 	}
 }
 
@@ -77,6 +79,8 @@ func (c *Client) post(ctx context.Context, path string, payload ledgerRequest) (
 		return "", fmt.Errorf("create wallet request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Wallet rejects every data/mutation route without this service credential.
+	req.Header.Set("X-Rial-Internal-Token", c.internalToken)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("wallet request: %w", err)

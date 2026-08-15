@@ -25,7 +25,9 @@ import (
 
 func main() {
 	cfg, err := config.Load()
-	if err != nil { panic(err) }
+	if err != nil {
+		panic(err)
+	}
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 
@@ -33,18 +35,28 @@ func main() {
 	defer cancel()
 
 	pg, err := store.NewPostgres(ctx, cfg.Postgres.DSN, logger)
-	if err != nil { logger.Fatal("postgres", zap.Error(err)) }
+	if err != nil {
+		logger.Fatal("postgres", zap.Error(err))
+	}
 	defer pg.Close()
 
 	rd, err := store.NewRedis(ctx, cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, logger)
-	if err != nil { logger.Fatal("redis", zap.Error(err)) }
+	if err != nil {
+		logger.Fatal("redis", zap.Error(err))
+	}
 	defer rd.Close()
 
 	nc, err := event.NewNats(cfg.Nats.URL, logger)
-	if err != nil { logger.Warn("nats disabled", zap.Error(err)); nc = nil }
+	if err != nil {
+		logger.Warn("nats disabled", zap.Error(err))
+		nc = nil
+	}
 
 	kc, err := event.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic, logger)
-	if err != nil { logger.Warn("kafka disabled", zap.Error(err)); kc = nil }
+	if err != nil {
+		logger.Warn("kafka disabled", zap.Error(err))
+		kc = nil
+	}
 
 	riskClient := risk.NewClient(cfg.AI.EngineURL, logger)
 	walletClient := wallet.NewClient(cfg.Wallet)
@@ -52,10 +64,10 @@ func main() {
 	gradSvc := graduation.NewService(cfg, curveEngine, pg, rd, nc, logger)
 	launchSvc := launch.NewService(cfg, pg, rd, nc, kc, riskClient, walletClient, curveEngine, gradSvc, logger)
 
-	srv := api.NewServer(launchSvc, gradSvc, logger)
+	srv := api.NewServer(launchSvc, gradSvc, logger, cfg.InternalToken)
 	httpSrv := &http.Server{
-		Addr: ":" + cfg.HTTP.Port,
-		Handler: middleware.HTTPTracing(srv.Handler(), logger),
+		Addr:              ":" + cfg.HTTP.Port,
+		Handler:           middleware.HTTPTracing(srv.Handler(), logger),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {

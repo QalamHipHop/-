@@ -15,6 +15,9 @@ type Config struct {
 	HTTPAddr    string
 	GRPCAddr    string
 	OTELEndpoint string
+	// InternalToken authenticates trusted platform services to the wallet HTTP API.
+	// It is deliberately required in every environment; no development default exists.
+	InternalToken string
 
 	Postgres PostgresConfig
 	Redis    RedisConfig
@@ -93,6 +96,7 @@ func Load() (*Config, error) {
 		HTTPAddr:   v.GetString("http_addr"),
 		GRPCAddr:   v.GetString("grpc_addr"),
 		OTELEndpoint: v.GetString("otel_endpoint"),
+		InternalToken: v.GetString("internal_token"),
 		Postgres: PostgresConfig{
 			Host: v.GetString("postgres.host"),
 			Port: v.GetInt("postgres.port"),
@@ -141,6 +145,12 @@ func Load() (*Config, error) {
 	if cfg.Postgres.Password == "" && cfg.Env == "production" {
 		return nil, fmt.Errorf("RIAL_WALLET_POSTGRES_PASSWORD is required in production")
 	}
+	if strings.TrimSpace(cfg.InternalToken) == "" {
+		return nil, fmt.Errorf("RIAL_WALLET_INTERNAL_TOKEN is required")
+	}
+	if cfg.Env == "production" && len(cfg.InternalToken) < 32 {
+		return nil, fmt.Errorf("RIAL_WALLET_INTERNAL_TOKEN must be at least 32 characters in production")
+	}
 	return cfg, nil
 }
 
@@ -150,6 +160,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("http_addr", ":8081")
 	v.SetDefault("grpc_addr", ":9091")
 	v.SetDefault("otel_endpoint", "")
+	v.SetDefault("internal_token", "")
 
 	v.SetDefault("postgres.host", "localhost")
 	v.SetDefault("postgres.port", 5432)

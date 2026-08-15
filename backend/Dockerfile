@@ -11,8 +11,10 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --no-frozen-lockfile --ignore-scripts --node-linker=hoisted
 COPY . .
 RUN pnpm run build || npm run build
-RUN rm -rf node_modules && \
-    pnpm install --prod --no-frozen-lockfile --ignore-scripts --node-linker=hoisted
+# Reuse the already-installed dependency graph and remove build-only packages.
+# A second install duplicates thousands of files during image build and can
+# exhaust overlay inode capacity before the runtime image is assembled.
+RUN pnpm prune --prod --no-optional --ignore-scripts
 
 FROM node:${NODE_VERSION} AS runtime
 WORKDIR /app

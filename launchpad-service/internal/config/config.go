@@ -10,18 +10,20 @@ import (
 )
 
 type Config struct {
-	Env       string `mapstructure:"env"`
-	Service   string `mapstructure:"service"`
-	GRPC      GRPC   `mapstructure:"grpc"`
-	HTTP      HTTP   `mapstructure:"http"`
-	Postgres  PG     `mapstructure:"postgres"`
-	Redis     RD     `mapstructure:"redis"`
-	Nats      NATS   `mapstructure:"nats"`
-	Kafka     KFK    `mapstructure:"kafka"`
-	JWT       JWT    `mapstructure:"jwt"`
-	AI        AI     `mapstructure:"ai"`
-	Wallet    Wallet `mapstructure:"wallet"`
-	Launchpad LPD    `mapstructure:"launchpad"`
+	Env     string `mapstructure:"env"`
+	Service string `mapstructure:"service"`
+	// InternalToken authenticates platform services to state-changing HTTP routes.
+	InternalToken string `mapstructure:"internal_token"`
+	GRPC          GRPC   `mapstructure:"grpc"`
+	HTTP          HTTP   `mapstructure:"http"`
+	Postgres      PG     `mapstructure:"postgres"`
+	Redis         RD     `mapstructure:"redis"`
+	Nats          NATS   `mapstructure:"nats"`
+	Kafka         KFK    `mapstructure:"kafka"`
+	JWT           JWT    `mapstructure:"jwt"`
+	AI            AI     `mapstructure:"ai"`
+	Wallet        Wallet `mapstructure:"wallet"`
+	Launchpad     LPD    `mapstructure:"launchpad"`
 }
 
 type GRPC struct {
@@ -55,20 +57,21 @@ type AI struct {
 	Timeout   time.Duration `mapstructure:"timeout"`
 }
 type Wallet struct {
-	BaseURL string        `mapstructure:"base_url"`
-	Timeout time.Duration `mapstructure:"timeout"`
+	BaseURL       string        `mapstructure:"base_url"`
+	Timeout       time.Duration `mapstructure:"timeout"`
+	InternalToken string        `mapstructure:"internal_token"`
 }
 type LPD struct {
-	VirtualReserveMinor int64   `mapstructure:"virtual_reserve_minor"`
-	RealReserveMinor    int64   `mapstructure:"real_reserve_minor"`
-	GraduationMinor     int64   `mapstructure:"graduation_minor"`
-	MaxTokensPerCreator int     `mapstructure:"max_tokens_per_creator"`
-	CreatorFeeBps       int     `mapstructure:"creator_fee_bps"`
-	PlatformFeeBps      int     `mapstructure:"platform_fee_bps"`
-	MinCreatorStake     int64   `mapstructure:"min_creator_stake"`
-	EnableModeration    bool    `mapstructure:"enable_moderation"`
-	RiskAIEnabled       bool    `mapstructure:"risk_ai_enabled"`
-	DefaultCurve        string  `mapstructure:"default_curve"`
+	VirtualReserveMinor int64    `mapstructure:"virtual_reserve_minor"`
+	RealReserveMinor    int64    `mapstructure:"real_reserve_minor"`
+	GraduationMinor     int64    `mapstructure:"graduation_minor"`
+	MaxTokensPerCreator int      `mapstructure:"max_tokens_per_creator"`
+	CreatorFeeBps       int      `mapstructure:"creator_fee_bps"`
+	PlatformFeeBps      int      `mapstructure:"platform_fee_bps"`
+	MinCreatorStake     int64    `mapstructure:"min_creator_stake"`
+	EnableModeration    bool     `mapstructure:"enable_moderation"`
+	RiskAIEnabled       bool     `mapstructure:"risk_ai_enabled"`
+	DefaultCurve        string   `mapstructure:"default_curve"`
 	AllowedCurves       []string `mapstructure:"allowed_curves"`
 	// graduation target: AMM adapter
 	AMMAdapter string `mapstructure:"amm_adapter"`
@@ -83,6 +86,7 @@ func Load() (*Config, error) {
 
 	v.SetDefault("env", "development")
 	v.SetDefault("service", "launchpad-service")
+	v.SetDefault("internal_token", "")
 	v.SetDefault("grpc.port", "50054")
 	v.SetDefault("http.port", "8084")
 
@@ -103,6 +107,7 @@ func Load() (*Config, error) {
 	v.SetDefault("ai.timeout", "5s")
 	v.SetDefault("wallet.base_url", "http://wallet-service:50053")
 	v.SetDefault("wallet.timeout", "5s")
+	v.SetDefault("wallet.internal_token", "")
 
 	v.SetDefault("launchpad.virtual_reserve_minor", int64(30_000_000_000))
 	v.SetDefault("launchpad.real_reserve_minor", int64(0))
@@ -119,7 +124,23 @@ func Load() (*Config, error) {
 	v.SetDefault("launchpad.amm_base", "RIAL")
 
 	var c Config
-	if err := v.Unmarshal(&c); err != nil { return nil, err }
-	if c.Postgres.DSN == "" { return nil, errors.New("LAUNCHPAD_POSTGRES_DSN required") }
+	if err := v.Unmarshal(&c); err != nil {
+		return nil, err
+	}
+	if c.Postgres.DSN == "" {
+		return nil, errors.New("LAUNCHPAD_POSTGRES_DSN required")
+	}
+	if strings.TrimSpace(c.InternalToken) == "" {
+		return nil, errors.New("LAUNCHPAD_INTERNAL_TOKEN required")
+	}
+	if c.Env == "production" && len(c.InternalToken) < 32 {
+		return nil, errors.New("LAUNCHPAD_INTERNAL_TOKEN must be at least 32 characters in production")
+	}
+	if strings.TrimSpace(c.Wallet.InternalToken) == "" {
+		return nil, errors.New("LAUNCHPAD_WALLET_INTERNAL_TOKEN required")
+	}
+	if c.Env == "production" && len(c.Wallet.InternalToken) < 32 {
+		return nil, errors.New("LAUNCHPAD_WALLET_INTERNAL_TOKEN must be at least 32 characters in production")
+	}
 	return &c, nil
 }

@@ -17,7 +17,7 @@ get_value() {
 
 required=(
   NODE_ENV POSTGRES_PASSWORD REDIS_PASSWORD CLICKHOUSE_PASSWORD
-  MINIO_ROOT_PASSWORD MEILI_MASTER_KEY JWT_SECRET CSRF_SECRET
+  MINIO_ROOT_PASSWORD MEILI_MASTER_KEY JWT_SECRET CSRF_SECRET WALLET_INTERNAL_TOKEN LAUNCHPAD_INTERNAL_TOKEN
   GF_ADMIN_PASSWORD API_BASE_URL SOLANA_MAINNET_RPC_URL
 )
 
@@ -27,7 +27,7 @@ for key in "${required[@]}"; do
   if [[ -z "$value" || "$value" == REPLACE_* || "$value" == change-me || "$value" == admin ]]; then
     echo "ERROR: $key is missing or still a template/default value" >&2
     failed=1
-  elif [[ "$key" == *PASSWORD || "$key" == *SECRET || "$key" == *KEY ]] && (( ${#value} < 32 )); then
+  elif [[ "$key" == *PASSWORD || "$key" == *SECRET || "$key" == *KEY || "$key" == *TOKEN ]] && (( ${#value} < 32 )); then
     echo "ERROR: $key must be at least 32 characters" >&2
     failed=1
   fi

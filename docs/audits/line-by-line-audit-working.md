@@ -85,3 +85,7 @@ _grantRole(DEFAULT_ADMIN_ROLE, admin);
 ## Test-environment limitation
 
 The repository contains `matching-engine/tests/matching.rs` and `trading-engine/tests/trading.rs`, but the sandbox image does not provide the Rust `cargo` toolchain (`cargo: command not found`). No Rust test result is therefore claimed in this audit. FIN-014 through FIN-016 remain **source-confirmed** findings, with exact code paths cited above, rather than runtime-reproduced test outcomes.
+
+## Remediation evidence — P0 baseline
+
+On 2026-08-15, wallet HTTP data/mutation routes were changed to require `X-Rial-Internal-Token`, sourced from an untracked local secret and injected identically into wallet-service and launchpad-service by Compose. Direct unauthenticated account lookup and credit attempts returned `401 {"error":"internal_auth_required"}` before any account lookup or mutation. The real E2E flow then passed using the trusted credential: development ledger credit → launchpad create → approval → quote → wallet-settled buy. This control removes direct anonymous access to the Go wallet API but does **not** yet supply end-user authorization, service identity rotation, mTLS, or secure withdrawal custody; those remain open P0 work items.
