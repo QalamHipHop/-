@@ -20,8 +20,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PAYMENT_HTTP_PORT=50055 \
     PAYMENT_GRPC_PORT=50056
+RUN apk add --no-cache wget
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/proto ./proto
 COPY package.json ./
 EXPOSE 50055 50056
 USER node
