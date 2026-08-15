@@ -47,6 +47,14 @@ contract RialAMM is ERC20, IAMM {
         return (_reserve0, _reserve1, _blockTimestampLast);
     }
 
+    function totalSupply() public view override(ERC20, IAMM) returns (uint256) {
+        return super.totalSupply();
+    }
+
+    function balanceOf(address account) public view override(ERC20, IAMM) returns (uint256) {
+        return super.balanceOf(account);
+    }
+
     function mint(address to) external override lock returns (uint256 liquidity) {
         (uint112 r0, uint112 r1, ) = getReserves();
         uint256 bal0 = IERC20(token0).balanceOf(address(this));

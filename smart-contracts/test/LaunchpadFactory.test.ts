@@ -83,3 +83,49 @@ describe("Rial Smart Contracts — sanity suite", () => {
     void token;
   });
 });
+
+describe("OpenZeppelin RBAC enforcement", () => {
+	let admin: Signer, user: Signer;
+	let rial: any, vesting: any;
+
+	beforeEach(async () => {
+		[admin, user] = await ethers.getSigners();
+		const RialToken = await ethers.getContractFactory("RialToken");
+		rial = await RialToken.deploy(await admin.getAddress());
+		const Vesting = await ethers.getContractFactory("VestingWallet");
+		vesting = await Vesting.deploy(await admin.getAddress());
+	});
+
+	it("rejects unauthorised role grants and revocations", async () => {
+			const attacker = (await ethers.getSigners())[3];
+			const attackerAddress = await attacker.getAddress();
+			const adminRole = await rial.DEFAULT_ADMIN_ROLE();
+			const minterRole = await rial.MINTER_ROLE();
+
+			await expect(rial.connect(attacker).grantRole(minterRole, attackerAddress))
+				.to.be.revertedWithCustomError(rial, "AccessControlUnauthorizedAccount")
+				.withArgs(attackerAddress, adminRole);
+			await expect(rial.connect(attacker).revokeRole(minterRole, await admin.getAddress()))
+				.to.be.revertedWithCustomError(rial, "AccessControlUnauthorizedAccount")
+				.withArgs(attackerAddress, adminRole);
+		});
+
+		it("allows the default admin to delegate a role", async () => {
+			const minterRole = await rial.MINTER_ROLE();
+			await rial.grantRole(minterRole, await user.getAddress());
+			expect(await rial.hasRole(minterRole, await user.getAddress())).to.equal(true);
+		});
+
+		it("rejects schedule creation by an account without ADMIN_ROLE", async () => {
+			await expect(
+				vesting.connect(user).createSchedule(
+					await user.getAddress(),
+					await rial.getAddress(),
+					100n,
+					0,
+					0,
+					3600,
+				),
+			).to.be.revertedWithCustomError(vesting, "AccessControlUnauthorizedAccount");
+		});
+	});
