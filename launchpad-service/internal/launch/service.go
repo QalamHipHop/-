@@ -214,7 +214,8 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 	if err != nil { return nil, err }
 	defer func() { _ = release() }()
 
-	if existing, found, err := s.pg.GetTradeRequest(ctx, tokenID, userID, clientID); err != nil {
+	requestID := "buy:" + clientID
+	if existing, found, err := s.pg.GetTradeRequest(ctx, tokenID, userID, requestID); err != nil {
 		return nil, err
 	} else if found {
 		return existing, nil
@@ -230,7 +231,7 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 	walletTxID, err := s.wallet.Debit(ctx, userID.String(), rialInMinor, settlementRef, settlementKey, settlementMeta)
 	if err != nil { return nil, fmt.Errorf("SETTLEMENT_DEBIT_FAILED: %w", err) }
 	refund := func(cause error) error {
-		_, refundErr := s.wallet.Credit(ctx, userID.String(), rialInMinor, settlementRef, "refund-"+settlementKey, settlementMeta)
+		_, refundErr := s.wallet.Refund(ctx, userID.String(), rialInMinor, settlementRef, "refund-"+settlementKey, settlementMeta)
 		if refundErr != nil {
 			s.log.Error("wallet refund after failed buy state update", zap.Error(refundErr), zap.Error(cause), zap.String("trade_id", tradeID.String()))
 			return fmt.Errorf("%w; settlement refund failed: %v", cause, refundErr)
@@ -257,7 +258,7 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 		NewBonding: newState, ExecutedAt: time.Now(),
 	}
 	if h, _ := s.pg.GetHolder(ctx, tokenID, userID); h != nil { res.NewHolder = *h }
-	if err := s.pg.CreateTradeRequest(ctx, tokenID, userID, clientID, res); err != nil {
+	if err := s.pg.CreateTradeRequest(ctx, tokenID, userID, requestID, res); err != nil {
 		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, -out)
 		_ = s.pg.UpsertBonding(ctx, st)
 		return nil, refund(err)
@@ -274,6 +275,7 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 }
 
 func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInMinor int64, clientID string) (*domain.BuyResult, error) {
+	if strings.TrimSpace(clientID) == "" { return nil, errors.New("CLIENT_ID_REQUIRED") }
 	tk, st, err := s.tokenAndState(ctx, tokenID)
 	if err != nil { return nil, err }
 	if tk.Status != domain.TokenLive { return nil, errors.New("TOKEN_NOT_LIVE") }
@@ -281,22 +283,59 @@ func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInM
 	cs := &curve.State{SupplyMinor: st.SupplyCirculatingMinor, ReserveMinor: st.ReserveRialMinor, VirtualMinor: st.VirtualRialMinor, Params: curve.MustParams(tk.CurveParams)}
 	out, fee, newSup, newRes, err := s.curve.QuoteSell(cs, model, tokensInMinor)
 	if err != nil { return nil, err }
+	if out <= 0 { return nil, errors.New("ZERO_OUTPUT") }
 	release, err := s.rd.AcquireLock(ctx, "sell:"+tokenID.String(), 5*time.Second)
 	if err != nil { return nil, err }
 	defer func() { _ = release() }()
-	if err := s.pg.AddHolderDelta(ctx, tokenID, userID, -tokensInMinor); err != nil { return nil, err }
+
+	requestID := "sell:" + clientID
+	if existing, found, err := s.pg.GetTradeRequest(ctx, tokenID, userID, requestID); err != nil {
+		return nil, err
+	} else if found {
+		return existing, nil
+	}
+	holder, err := s.pg.GetHolder(ctx, tokenID, userID)
+	if err != nil { return nil, err }
+	if holder == nil || holder.BalanceMinor < tokensInMinor { return nil, errors.New("INSUFFICIENT_TOKEN_BALANCE") }
+
+	tradeID := uuid.New()
+	settlementKey := settlementKey("sell", tokenID, userID, clientID)
+	settlementRef := "launchpad-sell:" + tradeID.String()
+	settlementMeta := map[string]any{
+		"token_id": tokenID.String(), "trade_id": tradeID.String(),
+		"token_in_minor": tokensInMinor, "fee_minor": fee,
+	}
+	walletTxID, err := s.wallet.CreditTrade(ctx, userID.String(), out, settlementRef, settlementKey, settlementMeta)
+	if err != nil { return nil, fmt.Errorf("SETTLEMENT_CREDIT_FAILED: %w", err) }
+	reversePayout := func(cause error) error {
+		_, reverseErr := s.wallet.Debit(ctx, userID.String(), out, settlementRef, "reversal-"+settlementKey, settlementMeta)
+		if reverseErr != nil {
+			s.log.Error("wallet debit after failed sell state update", zap.Error(reverseErr), zap.Error(cause), zap.String("trade_id", tradeID.String()))
+			return fmt.Errorf("%w; settlement reversal failed: %v", cause, reverseErr)
+		}
+		return cause
+	}
+	if err := s.pg.AddHolderDelta(ctx, tokenID, userID, -tokensInMinor); err != nil { return nil, reversePayout(err) }
 	newState := *st
 	newState.SupplyCirculatingMinor = newSup
 	newState.ReserveRialMinor = newRes
-	if err := s.pg.UpsertBonding(ctx, &newState); err != nil { return nil, err }
+	if err := s.pg.UpsertBonding(ctx, &newState); err != nil {
+		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, tokensInMinor)
+		return nil, reversePayout(err)
+	}
 	res := &domain.BuyResult{
 		Quote: domain.BuyQuote{
 			Token: *tk, AmountInMinor: tokensInMinor, AmountOutMinor: out, FeeMinor: fee,
 			NewReserveMinor: newRes, NewSupplyMinor: newSup, WillGraduate: false,
 		},
-		TradeID: uuid.New(), TxHash: "0x" + uuid.NewString(), NewBonding: newState, ExecutedAt: time.Now(),
+		TradeID: tradeID, TxHash: walletTxID, NewBonding: newState, ExecutedAt: time.Now(),
 	}
 	if h, _ := s.pg.GetHolder(ctx, tokenID, userID); h != nil { res.NewHolder = *h }
+	if err := s.pg.CreateTradeRequest(ctx, tokenID, userID, requestID, res); err != nil {
+		_ = s.pg.AddHolderDelta(ctx, tokenID, userID, tokensInMinor)
+		_ = s.pg.UpsertBonding(ctx, st)
+		return nil, reversePayout(err)
+	}
 	s.nc.Publish(ctx, "launchpad.sell", res)
 	s.kc.Audit(ctx, tokenID.String(), res)
 	return res, nil

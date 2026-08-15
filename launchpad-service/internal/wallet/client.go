@@ -49,9 +49,17 @@ func (c *Client) Debit(ctx context.Context, userID string, amount int64, referen
 	})
 }
 
-func (c *Client) Credit(ctx context.Context, userID string, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+func (c *Client) CreditTrade(ctx context.Context, userID string, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.credit(ctx, userID, amount, "trade", reference, idempotencyKey, metadata)
+}
+
+func (c *Client) Refund(ctx context.Context, userID string, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
+	return c.credit(ctx, userID, amount, "refund", reference, idempotencyKey, metadata)
+}
+
+func (c *Client) credit(ctx context.Context, userID string, amount int64, transactionType, reference, idempotencyKey string, metadata map[string]any) (string, error) {
 	return c.post(ctx, "/v1/credit", ledgerRequest{
-		UserID: userID, Amount: amount, Type: "refund", Reference: reference,
+		UserID: userID, Amount: amount, Type: transactionType, Reference: reference,
 		IdempotencyKey: idempotencyKey, Metadata: metadata,
 	})
 }
