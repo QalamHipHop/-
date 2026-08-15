@@ -27,7 +27,7 @@ fn order_to_proto(o: &Order) -> proto::Order {
         side: match o.side {
             Side::Buy => proto::Side::Buy as i32,
             Side::Sell => proto::Side::Sell as i32,
-            _ => proto::Side::SideUnspecified as i32,
+            _ => proto::Side::Unspecified as i32,
         },
         r#type: match o.order_type {
             OrderType::Market => proto::OrderType::Market as i32,
@@ -82,7 +82,7 @@ fn trade_to_proto(t: &crate::types::Trade) -> proto::Trade {
         taker_side: match t.taker_side {
             Side::Buy => proto::Side::Buy as i32,
             Side::Sell => proto::Side::Sell as i32,
-            _ => proto::Side::SideUnspecified as i32,
+            _ => proto::Side::Unspecified as i32,
         },
         price: t.price.to_string(),
         quantity: t.quantity.to_string(),

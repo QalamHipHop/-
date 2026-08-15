@@ -79,31 +79,42 @@ impl OrderBook {
     }
 
     /// Remove a resting order by ID. Returns the removed order if found.
-    pub fn remove(&mut self, market: &str, order_id: &str) -> Option<Order> {
-        for book in [&mut self.bids, &mut self.asks] {
+    pub fn remove(&mut self, _market: &str, order_id: &str) -> Option<Order> {
+        let mut sequence = self.sequence;
+        let mut found = None;
+        'books: for book in [&mut self.bids, &mut self.asks] {
             let mut empty: Vec<Decimal> = Vec::new();
             for (price, queue) in book.iter_mut() {
                 if let Some(pos) = queue.iter().position(|o| o.id == order_id) {
-                    let mut removed = queue.remove(pos).unwrap();
+                    let mut removed = queue.remove(pos).expect("position belongs to queue");
+                    sequence += 1;
                     removed.status = OrderStatus::Canceled;
-                    removed.sequence = self.next_seq();
-                    let _ = market;
-                    return Some(removed);
+                    removed.sequence = sequence;
+                    found = Some(removed);
+                    if queue.is_empty() {
+                        empty.push(*price);
+                    }
+                    for price in empty {
+                        book.remove(&price);
+                    }
+                    break 'books;
                 }
                 if queue.is_empty() {
                     empty.push(*price);
                 }
             }
-            for p in empty {
-                book.remove(&p);
+            for price in empty {
+                book.remove(&price);
             }
         }
-        None
+        self.sequence = sequence;
+        found
     }
 
     /// Remove all resting orders for a user. Returns the canceled orders.
     pub fn remove_user(&mut self, user_id: &str, market_filter: Option<&str>) -> Vec<Order> {
         let mut out = Vec::new();
+        let mut sequence = self.sequence;
         for book in [&mut self.bids, &mut self.asks] {
             let mut empty: Vec<Decimal> = Vec::new();
             for (price, queue) in book.iter_mut() {
@@ -111,8 +122,9 @@ impl OrderBook {
                     if o.user_id == user_id
                         && (market_filter.is_none() || market_filter == Some(o.market.as_str()))
                     {
+                        sequence += 1;
                         o.status = OrderStatus::Canceled;
-                        o.sequence = self.next_seq();
+                        o.sequence = sequence;
                         out.push(o.clone());
                         false
                     } else {
@@ -123,10 +135,11 @@ impl OrderBook {
                     empty.push(*price);
                 }
             }
-            for p in empty {
-                book.remove(&p);
+            for price in empty {
+                book.remove(&price);
             }
         }
+        self.sequence = sequence;
         out
     }
 

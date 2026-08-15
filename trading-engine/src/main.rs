@@ -27,7 +27,9 @@ async fn main() -> anyhow::Result<()> {
     info!(grpc = %cfg.server.grpc_addr, health = %cfg.server.health_addr, "starting trading-engine");
 
     // --- Metrics -----------------------------------------------------
-    let metrics = Arc::new(Metrics::install().context("install prometheus recorder")?);
+    let metrics = Arc::new(
+        Metrics::install().map_err(|e| anyhow::anyhow!("install prometheus recorder: {e}"))?,
+    );
 
     // --- Core components --------------------------------------------
     let router = Arc::new(Router::new(cfg.to_router_config()?));

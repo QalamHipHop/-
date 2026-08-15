@@ -3,6 +3,7 @@ pub mod health;
 pub mod matcher;
 pub mod metrics;
 pub mod orderbook;
+pub mod proto;
 pub mod service;
 pub mod types;
 

@@ -6,9 +6,9 @@
 use crate::decimal::{is_positive, min, zero};
 use crate::orderbook::OrderBook;
 use crate::types::{Order, OrderStatus, OrderType, Side, TimeInForce, Trade};
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FeeSchedule {
@@ -32,9 +32,10 @@ pub struct Market {
 
 impl Market {
     pub fn new(name: impl Into<String>, fees: FeeSchedule) -> Self {
+        let name = name.into();
         Self {
-            name: name.into(),
-            book: OrderBook::new(name.into()),
+            name: name.clone(),
+            book: OrderBook::new(name),
             fees,
         }
     }
@@ -70,6 +71,7 @@ impl Engine {
     pub fn submit(&self, mut order: Order) -> SubmitResult {
         let market = self.get_or_create(&order.market);
         let mut m = market.lock();
+        let fees = m.fees;
         let book = &mut m.book;
 
         order.sequence = book.next_seq();
@@ -82,18 +84,15 @@ impl Engine {
                 let fillable = self.peek_fillable(book, &order);
                 if fillable < initial_remaining {
                     order.status = OrderStatus::Rejected;
-                    SubmitResult { order, trades, fully_filled: false }
+                    SubmitResult { fully_filled: false, order, trades }
                 } else {
-                    self.cross(book, &mut order, &mut trades, m.fees);
-                    SubmitResult {
-                        order,
-                        trades,
-                        fully_filled: order.remaining_quantity.is_zero(),
-                    }
+                    self.cross(book, &mut order, &mut trades, fees);
+                    let fully_filled = order.remaining_quantity.is_zero();
+                    SubmitResult { fully_filled, order, trades }
                 }
             }
             TimeInForce::Ioc => {
-                self.cross(book, &mut order, &mut trades, m.fees);
+                self.cross(book, &mut order, &mut trades, fees);
                 if !order.remaining_quantity.is_zero() {
                     order.status = if order.filled_quantity.is_zero() {
                         OrderStatus::Canceled
@@ -101,24 +100,18 @@ impl Engine {
                         OrderStatus::PartiallyFilled
                     };
                 }
-                SubmitResult {
-                    order,
-                    trades,
-                    fully_filled: order.remaining_quantity.is_zero(),
-                }
+                let fully_filled = order.remaining_quantity.is_zero();
+                SubmitResult { fully_filled, order, trades }
             }
             TimeInForce::Gtc | TimeInForce::Gtd | TimeInForce::Day => {
-                self.cross(book, &mut order, &mut trades, m.fees);
+                self.cross(book, &mut order, &mut trades, fees);
                 let resting = !order.remaining_quantity.is_zero()
                     && matches!(order.order_type, OrderType::Limit);
                 if resting {
                     book.insert_resting(order.clone());
                 }
-                SubmitResult {
-                    order,
-                    trades,
-                    fully_filled: order.remaining_quantity.is_zero(),
-                }
+                let fully_filled = order.remaining_quantity.is_zero();
+                SubmitResult { fully_filled, order, trades }
             }
         }
     }
@@ -175,6 +168,10 @@ impl Engine {
         trades: &mut Vec<Trade>,
         fees: FeeSchedule,
     ) {
+        // Copy scalar state before borrowing one side of the book. Sequence is
+        // committed after the borrow ends, retaining monotonic event ordering.
+        let market = book.market.clone();
+        let mut sequence = book.sequence;
         let opp_book = match taker.side {
             Side::Buy => &mut book.asks,
             Side::Sell => &mut book.bids,
@@ -186,7 +183,7 @@ impl Engine {
                 break;
             }
             while taker.remaining_quantity > zero() && !queue.is_empty() {
-                let maker = queue.front_mut().unwrap();
+                let maker = queue.front_mut().expect("queue verified non-empty");
                 if maker.remaining_quantity.is_zero() {
                     queue.pop_front();
                     continue;
@@ -198,16 +195,16 @@ impl Engine {
                 let notional = *price * qty;
                 let taker_fee = notional * Decimal::from(fees.taker_bps) / Decimal::from(10_000u32);
                 let maker_fee = notional * Decimal::from(fees.maker_bps.max(0) as u32) / Decimal::from(10_000u32);
-                let seq = book.next_seq();
+                sequence += 1;
                 let trade = Trade::new(
-                    book.market.clone(),
+                    market.clone(),
                     taker,
                     maker,
                     *price,
                     qty,
                     taker_fee,
                     maker_fee,
-                    seq,
+                    sequence,
                 );
                 maker.fill(qty);
                 taker.fill(qty);
@@ -223,6 +220,7 @@ impl Engine {
         for p in empty_prices {
             opp_book.remove(&p);
         }
+        book.sequence = sequence;
     }
 }
 

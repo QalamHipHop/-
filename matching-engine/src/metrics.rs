@@ -21,7 +21,7 @@ pub async fn serve_metrics(addr: SocketAddr, handle: PrometheusHandle) -> anyhow
             let svc = service_fn(move |_req: Request<Incoming>| {
                 let body = handle.render();
                 async move {
-                    Ok::<_, Infallible>(Response::new::<String>(body).map(|b| b.into()))
+                    Ok::<_, Infallible>(Response::new(body))
                 }
             });
             if let Err(e) = http1::Builder::new().serve_connection(io, svc).await {

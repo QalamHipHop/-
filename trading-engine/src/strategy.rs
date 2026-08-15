@@ -16,7 +16,8 @@ use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::decimal::{apply_bps, apply_bps_down, parse_decimal};
+use crate::decimal::{apply_bps, apply_bps_down};
+use crate::types::parse_decimal;
 use crate::types::{now_ms, Quote, Side, StrategyKind, StrategySpec};
 
 #[derive(Debug, Clone)]
@@ -237,11 +238,12 @@ impl StrategyEngine {
             let cfg = self.mm_cfg.read();
             Duration::from_millis(cfg.refresh_interval_ms.max(50))
         };
+        let kill_for_task = kill.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(interval);
             loop {
                 tokio::select! {
-                    _ = kill.notified() => {
+                    _ = kill_for_task.notified() => {
                         info!("strategy loop stopping");
                         break;
                     }

@@ -86,7 +86,7 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
             client_order_id: r.client_order_id,
             user_id: r.user_id,
             symbol: r.symbol,
-            side: r.side.into(),
+            side: pb::Side::try_from(r.side).unwrap_or(pb::Side::Unspecified).into(),
             order_type: pb::OrderType::try_from(r.r#type).unwrap_or(pb::OrderType::Market).into(),
             tif: pb::TimeInForce::try_from(r.tif).unwrap_or(pb::TimeInForce::Gtc).into(),
             quantity: r
