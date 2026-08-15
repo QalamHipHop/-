@@ -113,8 +113,8 @@ func (s *State) SpotPriceFor(supplyMinor int64) (float64, error) {
 		return p.BasePriceMinor * (1 + log1p(x*9)), nil
 	case ModelSigmoid:
 		// price = base + (max - base) * sigmoid((x - mid) / k)
-		maxP := p.VirtualRial / 1e8 * 10 // heuristic
-		return p.BasePriceMinor + (maxP-p.BasePriceMinor)*sigmoid((x-p.Midpoint)/max(p.Stiffness, 1e-9)), nil
+		maxP := float64(p.VirtualRial) / 1e8 * 10 // heuristic
+			return p.BasePriceMinor + (maxP-p.BasePriceMinor)*sigmoid((x-p.Midpoint)/max(p.Stiffness, 1e-9)), nil
 	}
 	return 0, errors.New("curve: unsupported model")
 }
@@ -144,7 +144,7 @@ func (e *Engine) QuoteBuy(s *State, m Model, rialInMinor int64) (tokensOut int64
 	for it := 0; it < 80; it++ {
 		mid := lo + (hi-lo)/2
 		area, _ := integrate(s, m, s.SupplyMinor, mid)
-		if area < effective { lo = mid } else { hi = mid }
+		if area < float64(effective) { lo = mid } else { hi = mid }
 	}
 	// refine with one more iteration
 	avg := (lo + hi) / 2
@@ -205,7 +205,7 @@ func spotAt(s *State, m Model, x int64) (float64, error) {
 		if xx <= 0 { return p.BasePriceMinor, nil }
 		return p.BasePriceMinor * (1 + log1p(xx*9)), nil
 	case ModelSigmoid:
-		maxP := p.VirtualRial / 1e8 * 10
+		maxP := float64(p.VirtualRial) / 1e8 * 10
 		return p.BasePriceMinor + (maxP-p.BasePriceMinor)*sigmoid((xx-p.Midpoint)/max(p.Stiffness, 1e-9)), nil
 	}
 	return 0, errors.New("curve: unsupported model")

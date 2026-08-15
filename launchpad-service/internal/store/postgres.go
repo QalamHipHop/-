@@ -11,11 +11,19 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
+
+	"github.com/rial/launchpad-service/internal/domain"
 )
 
 type PG struct {
 	Pool *pgxpool.Pool
 }
+
+// Domain aliases keep persistence signatures aligned with the public launchpad model.
+type Token = domain.Token
+type BondingState = domain.BondingState
+type Holder = domain.Holder
+type VestingSchedule = domain.VestingSchedule
 
 func NewPostgres(ctx context.Context, dsn string, logger *zap.Logger) (*PG, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)

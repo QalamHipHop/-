@@ -236,7 +236,15 @@ services:
   launchpad-service:
     build: { context: ./launchpad-service, dockerfile: Dockerfile }
     <<: *default-restart
-    depends_on: [postgres, redis]
+    depends_on: [postgres, redis, nats, kafka, ai-engine]
+    environment:
+      LAUNCHPAD_HTTP_PORT: "50054"
+      LAUNCHPAD_POSTGRES_DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      LAUNCHPAD_REDIS_ADDR: redis:6379
+      LAUNCHPAD_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      LAUNCHPAD_NATS_URL: nats://nats:4222
+      LAUNCHPAD_KAFKA_BROKERS: kafka:9092
+      LAUNCHPAD_AI_ENGINE_URL: http://ai-engine:50058
     ports: ["50054:50054"]
 
   payment-service:
