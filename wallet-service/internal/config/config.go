@@ -15,9 +15,10 @@ type Config struct {
 	HTTPAddr     string
 	GRPCAddr     string
 	OTELEndpoint string
-	// InternalToken authenticates trusted platform services to the wallet HTTP API.
-	// It is deliberately required in every environment; no development default exists.
+	// InternalToken is the development/legacy fallback for trusted platform services.
+	// Production uses ServiceTokens with an explicit X-Rial-Service scope.
 	InternalToken string
+	ServiceTokens map[string]string
 
 	Postgres   PostgresConfig
 	Redis      RedisConfig
@@ -101,6 +102,11 @@ func Load() (*Config, error) {
 		GRPCAddr:      v.GetString("grpc_addr"),
 		OTELEndpoint:  v.GetString("otel_endpoint"),
 		InternalToken: v.GetString("internal_token"),
+		ServiceTokens: map[string]string{
+			"backend":   v.GetString("backend_token"),
+			"payment":   v.GetString("payment_token"),
+			"launchpad": v.GetString("launchpad_token"),
+		},
 		Postgres: PostgresConfig{
 			Host:        v.GetString("postgres.host"),
 			Port:        v.GetInt("postgres.port"),
@@ -154,8 +160,15 @@ func Load() (*Config, error) {
 	if strings.TrimSpace(cfg.InternalToken) == "" {
 		return nil, fmt.Errorf("RIAL_WALLET_INTERNAL_TOKEN is required")
 	}
-	if cfg.Env == "production" && len(cfg.InternalToken) < 32 {
-		return nil, fmt.Errorf("RIAL_WALLET_INTERNAL_TOKEN must be at least 32 characters in production")
+	if cfg.Env == "production" {
+		for service, token := range cfg.ServiceTokens {
+			if len(token) < 32 || token == cfg.InternalToken {
+				return nil, fmt.Errorf("RIAL_WALLET_%s_TOKEN must be a unique secret of at least 32 characters in production", strings.ToUpper(service))
+			}
+		}
+		if len(cfg.ServiceTokens) != 3 {
+			return nil, fmt.Errorf("RIAL_WALLET_BACKEND_TOKEN, RIAL_WALLET_PAYMENT_TOKEN and RIAL_WALLET_LAUNCHPAD_TOKEN are required in production")
+		}
 	}
 	if cfg.Env == "production" && (cfg.Custody.Mode == "" || cfg.Custody.Mode == "memory" || cfg.Custody.Mode == "dev" || cfg.Custody.Mode == "development" || cfg.Custody.Mode == "test") {
 		return nil, fmt.Errorf("RIAL_WALLET_CUSTODY_MODE must select a durable production custody adapter")
@@ -173,6 +186,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("grpc_addr", ":9091")
 	v.SetDefault("otel_endpoint", "")
 	v.SetDefault("internal_token", "")
+	v.SetDefault("backend_token", "")
+	v.SetDefault("payment_token", "")
+	v.SetDefault("launchpad_token", "")
 	v.SetDefault("withdrawal_whitelist_required", false)
 	v.SetDefault("withdrawal_allowed_signer_ids", "")
 

@@ -9,7 +9,7 @@ export class CustodyClient {
     if (!this.token) throw new BadGatewayException({ code: 'CUSTODY_CREDENTIAL_MISSING' });
     let response: Response;
     try {
-      response = await fetch(`${this.baseUrl}${path}`, { method, headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Rial-Internal-Token': this.token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(5_000) });
+      response = await fetch(`${this.baseUrl}${path}`, { method, headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Rial-Internal-Token': this.token, 'X-Rial-Service': 'backend' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(5_000) });
     } catch { throw new BadGatewayException({ code: 'CUSTODY_UNAVAILABLE' }); }
     const text = await response.text();
     let parsed: unknown; try { parsed = JSON.parse(text); } catch { parsed = undefined; }

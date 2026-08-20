@@ -26,6 +26,7 @@ export class WalletSettlementClient {
         Accept: 'application/json',
         'Content-Type': 'application/json',
         'X-Rial-Internal-Token': this.cfg.walletInternalToken,
+        'X-Rial-Service': 'payment',
       },
       body: JSON.stringify({
         user_id: input.userId,

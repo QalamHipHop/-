@@ -104,7 +104,7 @@ func RegisterRoutes(r *gin.Engine, svc *ledger.Service, cfg *config.Config) {
 	// Wallet data and every balance mutation are internal-only. The public
 	// gateway must authenticate an end user before it calls this service.
 	v1 := r.Group("/v1")
-	v1.Use(internalAuth(cfg.InternalToken))
+	v1.Use(internalAuth(cfg))
 	{
 		v1.GET("/accounts/:user_id", h.getAccount)
 		v1.POST("/credit", h.credit)
@@ -127,13 +127,22 @@ func RegisterRoutes(r *gin.Engine, svc *ledger.Service, cfg *config.Config) {
 	}
 }
 
-func internalAuth(expected string) gin.HandlerFunc {
+func internalAuth(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		service := c.GetHeader("X-Rial-Service")
+		expected := cfg.InternalToken
+		if scoped, ok := cfg.ServiceTokens[service]; ok && scoped != "" {
+			expected = scoped
+		} else if cfg.Env == "production" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "service_scope_required"})
+			return
+		}
 		provided := c.GetHeader("X-Rial-Internal-Token")
-		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+		if provided == "" || expected == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "internal_auth_required"})
 			return
 		}
+		c.Set("rial.service", service)
 		c.Next()
 	}
 }

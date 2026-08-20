@@ -21,7 +21,7 @@ export class RialLedgerClient {
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
         method,
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Rial-Internal-Token': this.token },
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Rial-Internal-Token': this.token, 'X-Rial-Service': 'backend' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });

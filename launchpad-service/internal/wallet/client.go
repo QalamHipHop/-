@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +22,7 @@ type Client struct {
 
 type ledgerRequest struct {
 	UserID         string         `json:"user_id"`
-	Amount         int64          `json:"amount"`
+	Amount         string         `json:"amount"`
 	Type           string         `json:"type"`
 	Reference      string         `json:"reference"`
 	IdempotencyKey string         `json:"idempotency_key"`
@@ -46,7 +47,7 @@ func NewClient(cfg config.Wallet) *Client {
 
 func (c *Client) Debit(ctx context.Context, userID string, amount int64, reference, idempotencyKey string, metadata map[string]any) (string, error) {
 	return c.post(ctx, "/v1/debit", ledgerRequest{
-		UserID: userID, Amount: amount, Type: "trade", Reference: reference,
+		UserID: userID, Amount: strconv.FormatInt(amount, 10), Type: "trade", Reference: reference,
 		IdempotencyKey: idempotencyKey, Metadata: metadata,
 	})
 }
@@ -77,14 +78,14 @@ func (c *Client) DebitTreasury(ctx context.Context, amount int64, reference, ide
 
 func (c *Client) postInternal(ctx context.Context, path string, amount int64, transactionType, reference, idempotencyKey string, metadata map[string]any) (string, error) {
 	return c.post(ctx, path, ledgerRequest{
-		Amount: amount, Type: transactionType, Reference: reference,
+		Amount: strconv.FormatInt(amount, 10), Type: transactionType, Reference: reference,
 		IdempotencyKey: idempotencyKey, Metadata: metadata,
 	})
 }
 
 func (c *Client) credit(ctx context.Context, userID string, amount int64, transactionType, reference, idempotencyKey string, metadata map[string]any) (string, error) {
 	return c.post(ctx, "/v1/credit", ledgerRequest{
-		UserID: userID, Amount: amount, Type: transactionType, Reference: reference,
+		UserID: userID, Amount: strconv.FormatInt(amount, 10), Type: transactionType, Reference: reference,
 		IdempotencyKey: idempotencyKey, Metadata: metadata,
 	})
 }
@@ -104,6 +105,7 @@ func (c *Client) post(ctx context.Context, path string, payload ledgerRequest) (
 	req.Header.Set("Content-Type", "application/json")
 	// Wallet rejects every data/mutation route without this service credential.
 	req.Header.Set("X-Rial-Internal-Token", c.internalToken)
+	req.Header.Set("X-Rial-Service", "launchpad")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("wallet request: %w", err)
