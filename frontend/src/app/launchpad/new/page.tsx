@@ -21,10 +21,15 @@ const schema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(32, 'Name too long'),
   symbol: z.string().min(2, 'Symbol must be 2-8 chars').max(8, 'Symbol must be 2-8 chars').regex(/^[A-Z0-9]+$/i, 'Letters and numbers only').transform((s) => s.toUpperCase()),
   description: z.string().min(20, 'Description must be at least 20 characters').max(1000),
+  chain: z.literal('rial').default('rial'),
+  contract_address: z.string().min(1, 'Mint or contract identifier is required').max(256),
+  total_supply: z.string().regex(/^\d+$/, 'Total supply must be an integer string').refine((value) => BigInt(value) > 0n, 'Total supply must be positive'),
+  decimals: z.coerce.number().int().min(0).max(18),
+  curve_model: z.enum(['linear', 'exponential', 'logarithmic', 'sigmoid']),
+  graduation_rial_minor: z.string().regex(/^\d+$/, 'Graduation threshold must be an integer string').refine((value) => BigInt(value) > 0n, 'Graduation threshold must be positive'),
   website: z.string().url().optional().or(z.literal('')),
   twitter: z.string().optional(),
   telegram: z.string().optional(),
-  initialBuy: z.coerce.number().min(0).max(10000).optional().default(0),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -37,7 +42,7 @@ export default function NewLaunchPage() {
   const [submitting, setSubmitting] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { initialBuy: 0 },
+    defaultValues: { chain: 'rial', decimals: 8, curve_model: 'linear' },
   });
 
   if (!user) {
@@ -115,6 +120,49 @@ export default function NewLaunchPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle>{t('curveModel')}</CardTitle>
+            <CardDescription>{t('curveModelDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <input type="hidden" value="rial" {...register('chain')} />
+            <div>
+              <Label htmlFor="contract_address">{t('contractAddress')}</Label>
+              <Input id="contract_address" placeholder="rial:mint-or-contract-id" {...register('contract_address')} />
+              {errors.contract_address && <p className="text-xs text-destructive mt-1">{errors.contract_address.message}</p>}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <Label htmlFor="total_supply">{t('totalSupply')}</Label>
+                <Input id="total_supply" inputMode="numeric" placeholder="1000000000" {...register('total_supply')} />
+                {errors.total_supply && <p className="text-xs text-destructive mt-1">{errors.total_supply.message}</p>}
+              </div>
+              <div>
+                <Label htmlFor="decimals">{t('decimals')}</Label>
+                <Input id="decimals" type="number" min={0} max={18} step={1} {...register('decimals')} />
+                {errors.decimals && <p className="text-xs text-destructive mt-1">{errors.decimals.message}</p>}
+              </div>
+              <div>
+                <Label htmlFor="curve_model">{t('curveModel')}</Label>
+                <select id="curve_model" className="h-10 w-full rounded-md border bg-background px-3 text-sm" {...register('curve_model')}>
+                  <option value="linear">{t('curveLinear')}</option>
+                  <option value="exponential">{t('curveExponential')}</option>
+                  <option value="logarithmic">{t('curveLogarithmic')}</option>
+                  <option value="sigmoid">{t('curveSigmoid')}</option>
+                </select>
+                {errors.curve_model && <p className="text-xs text-destructive mt-1">{errors.curve_model.message}</p>}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="graduation_rial_minor">{t('graduationThreshold')}</Label>
+              <Input id="graduation_rial_minor" inputMode="numeric" placeholder="69000000000" {...register('graduation_rial_minor')} />
+              <p className="text-xs text-muted-foreground mt-1">{t('graduationThresholdDescription')}</p>
+              {errors.graduation_rial_minor && <p className="text-xs text-destructive mt-1">{errors.graduation_rial_minor.message}</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>{t('socialLinks')}</CardTitle>
             <CardDescription>{t('socialLinksDescription')}</CardDescription>
           </CardHeader>
@@ -137,19 +185,6 @@ export default function NewLaunchPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('initialBuyOptional')}</CardTitle>
-            <CardDescription>{t('initialBuyDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div>
-              <Label htmlFor="initialBuy">{t('amountRial')}</Label>
-              <Input id="initialBuy" type="number" inputMode="decimal" step="0.01" placeholder="0" {...register('initialBuy')} />
-              {errors.initialBuy && <p className="text-xs text-destructive mt-1">{errors.initialBuy.message}</p>}
-            </div>
-          </CardContent>
-        </Card>
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={() => router.back()}>{t('cancel')}</Button>
