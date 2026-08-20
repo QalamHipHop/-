@@ -183,7 +183,7 @@ export class TradingRepository {
   }
 
   // ---- candles ----
-  async upsertCandle(input: { marketId: string; interval: string; bucket: Date; open: number; high: number; low: number; close: number; volumeMinor: string }, c?: PoolClient): Promise<void> {
+  async upsertCandle(input: { marketId: string; interval: string; bucket: Date; open: string; high: string; low: string; close: string; volumeMinor: string }, c?: PoolClient): Promise<void> {
     await this.c(c).query(
       `INSERT INTO trading.candles (market_id, interval, bucket, open_minor, high_minor, low_minor, close_minor, volume_minor)
        VALUES ($1, $2, $3, $4::bigint, $5::bigint, $6::bigint, $7::bigint, $8::bigint)
@@ -196,7 +196,7 @@ export class TradingRepository {
     );
   }
 
-  async getCandles(marketId: string, interval: string, limit = 500): Promise<Array<{ bucket: Date; open: number; high: number; low: number; close: number; volume: number }>> {
+  async getCandles(marketId: string, interval: string, limit = 500): Promise<Array<{ bucket: Date; open: string; high: string; low: string; close: string; volume: string }>> {
     const r = await this.c().query<{ bucket: Date; open_minor: string; high_minor: string; low_minor: string; close_minor: string; volume_minor: string }>(
       `SELECT bucket, open_minor::text, high_minor::text, low_minor::text, close_minor::text, volume_minor::text
          FROM trading.candles
@@ -206,11 +206,11 @@ export class TradingRepository {
     );
     return r.rows.map((row) => ({
       bucket: row.bucket,
-      open: Number(row.open_minor),
-      high: Number(row.high_minor),
-      low: Number(row.low_minor),
-      close: Number(row.close_minor),
-      volume: Number(row.volume_minor),
+      open: row.open_minor,
+      high: row.high_minor,
+      low: row.low_minor,
+      close: row.close_minor,
+      volume: row.volume_minor,
     })).reverse();
   }
 }

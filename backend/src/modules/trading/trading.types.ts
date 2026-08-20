@@ -78,4 +78,4 @@ export interface PlaceOrderInput {
 
 export interface OrderBookLevel { price_minor: string; amount_minor: string; order_count: number; }
 export interface OrderBookSnapshot { market_id: string; bids: OrderBookLevel[]; asks: OrderBookLevel[]; ts: number; }
-export interface Candle { bucket: Date; open: number; high: number; low: number; close: number; volume: number; }
+export interface Candle { bucket: Date; open: string; high: string; low: string; close: string; volume: string; }

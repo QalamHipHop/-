@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { CandlestickChart, type Candle } from '@/components/market/candlestick-chart';
+import { CandlestickChart, type Candle as ChartCandle } from '@/components/market/candlestick-chart';
 import { OrderBook, type OrderBookLevel } from '@/components/market/order-book';
 import { RecentTrades, type Trade } from '@/components/market/recent-trades';
 import { TradeForm } from '@/components/market/trade-form';
@@ -19,8 +19,18 @@ import { ArrowLeft, Star, Share2 } from 'lucide-react';
 import Link from 'next/link';
 import { formatNumber, formatPercent } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import type { Time } from 'lightweight-charts';
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+
+interface ApiCandle {
+  bucket: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+}
 
 interface DepthPayload {
   symbol?: string;
@@ -110,11 +120,17 @@ export default function TradePairPage() {
     enabled: !!user,
   });
 
-  const { data: candles, isError: candlesError } = useQuery({
+  const { data: candlesApi, isError: candlesError } = useQuery({
     queryKey: ['candles', symbol, tf],
-    queryFn: () => api.get<Candle[]>(`/api/tokens/${symbol}/candles`, { query: { tf, limit: 200 } }),
+    queryFn: () => api.get<ApiCandle[]>(`/api/trading/markets/${symbol}/candles`, { query: { interval: tf, limit: 200 } }),
     refetchInterval: 30_000,
   });
+  const candles = useMemo<ChartCandle[]>(() => (candlesApi ?? []).flatMap((candle) => {
+    const values = [candle.open, candle.high, candle.low, candle.close].map(Number);
+    const time = Math.floor(new Date(candle.bucket).getTime() / 1000);
+    if (!Number.isFinite(time) || values.some((value) => !Number.isFinite(value))) return [];
+    return [{ time: time as Time, open: values[0], high: values[1], low: values[2], close: values[3] }];
+  }), [candlesApi]);
 
   useEffect(() => {
     if (initialDepth) {
