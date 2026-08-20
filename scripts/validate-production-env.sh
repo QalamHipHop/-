@@ -36,10 +36,17 @@ for key in "${required[@]}"; do
   fi
 done
 
-if [[ "$(get_value WALLET_BACKEND_TOKEN)" == "$(get_value WALLET_PAYMENT_TOKEN)" || "$(get_value WALLET_BACKEND_TOKEN)" == "$(get_value WALLET_LAUNCHPAD_TOKEN)" || "$(get_value WALLET_PAYMENT_TOKEN)" == "$(get_value WALLET_LAUNCHPAD_TOKEN)" || "$(get_value WALLET_BACKEND_TOKEN)" == "$(get_value WALLET_INTERNAL_TOKEN)" || "$(get_value WALLET_PAYMENT_TOKEN)" == "$(get_value WALLET_INTERNAL_TOKEN)" || "$(get_value WALLET_LAUNCHPAD_TOKEN)" == "$(get_value WALLET_INTERNAL_TOKEN)" ]]; then
-  echo "ERROR: wallet service tokens must be distinct from each other and the legacy token" >&2
-  failed=1
-fi
+declare -A seen_service_tokens=()
+for key in WALLET_INTERNAL_TOKEN WALLET_BACKEND_TOKEN WALLET_PAYMENT_TOKEN WALLET_LAUNCHPAD_TOKEN LAUNCHPAD_INTERNAL_TOKEN PAYMENT_INTERNAL_TOKEN; do
+  value=$(get_value "$key")
+  [[ -z "$value" ]] && continue
+  if [[ -n "${seen_service_tokens[$value]+x}" ]]; then
+    echo "ERROR: service-scoped tokens must be distinct (duplicate detected for $key)" >&2
+    failed=1
+  else
+    seen_service_tokens["$value"]="$key"
+  fi
+done
 if [[ "$(get_value MANUAL_PAYMENT_ENABLED)" != false ]]; then
   echo "ERROR: MANUAL_PAYMENT_ENABLED must equal false in production" >&2
   failed=1
