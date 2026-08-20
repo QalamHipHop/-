@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post } from '@nestjs/common';
 
 import { Public } from '../../common/guards/jwt-auth.guard';
 import { SettlementService } from './settlement.service';

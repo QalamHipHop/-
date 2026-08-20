@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 export interface OrderBookLevel {
   price: number;
@@ -20,6 +21,7 @@ interface OrderBookProps {
 }
 
 export function OrderBook({ bids, asks, loading, precision = 4, onSelectPrice }: OrderBookProps) {
+  const { t } = useI18n();
   const { maxSize, reversedAsks, sortedBids } = useMemo(() => {
     const sortedBids = [...bids].sort((a, b) => b.price - a.price);
     const reversedAsks = [...asks].sort((a, b) => a.price - b.price);
@@ -39,9 +41,9 @@ export function OrderBook({ bids, asks, loading, precision = 4, onSelectPrice }:
   return (
     <div className="rounded-md border bg-card text-sm font-mono">
       <div className="grid grid-cols-3 px-3 py-2 text-[10px] uppercase text-muted-foreground border-b">
-        <div>Price</div>
-        <div className="text-right">Size</div>
-        <div className="text-right">Total</div>
+        <div>{t('price')}</div>
+        <div className="text-right">{t('size')}</div>
+        <div className="text-right">{t('total')}</div>
       </div>
       <div className="px-3 py-1 space-y-px">
         {askRows.reverse().map((l, i) => (
@@ -49,7 +51,7 @@ export function OrderBook({ bids, asks, loading, precision = 4, onSelectPrice }:
         ))}
       </div>
       <div className="px-3 py-2 border-y bg-muted/30 text-center text-xs">
-        Spread: <span className="text-foreground">{spread.toFixed(precision)}</span>{' '}
+        {t('spread')}: <span className="text-foreground">{spread.toFixed(precision)}</span>{' '}
         <span className="text-muted-foreground">({spreadPct.toFixed(3)}%)</span>
       </div>
       <div className="px-3 py-1 space-y-px">

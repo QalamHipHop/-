@@ -12,3 +12,4 @@ pub mod strategy;
 pub mod types;
 
 pub use proto::rial::trading::v1 as pb;
+pub use types::{StrategyKind, StrategySpec};

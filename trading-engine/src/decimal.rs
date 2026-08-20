@@ -40,7 +40,10 @@ mod tests {
     fn bps_down_30() {
         let p = Decimal::from(100);
         // -0.30% = 99.70
-        assert_eq!(apply_bps_down(p, 30), Decimal::from_str("99.70000000").unwrap());
+        assert_eq!(
+            apply_bps_down(p, 30),
+            Decimal::from_str("99.70000000").unwrap()
+        );
     }
 
     #[test]

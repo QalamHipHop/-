@@ -4,7 +4,7 @@
  */
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 
 import { DatabaseConfig } from '../../config/database.config';
 import { DbService } from './db.service';

@@ -119,13 +119,13 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
 
   async convertUsdToRial(usd: number): Promise<bigint> {
     const r = await this.currentRate();
-    if (r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no exchange rate available' });
+    if (r.stale || r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
     return BigInt(Math.round((usd / r.usdPerUnit) * Number(SCALE)));
   }
 
   async convertRialToUsd(minor: bigint): Promise<number> {
     const r = await this.currentRate();
-    if (r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no exchange rate available' });
+    if (r.stale || r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
     return (Number(minor) / Number(SCALE)) * r.usdPerUnit;
   }
 

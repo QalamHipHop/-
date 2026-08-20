@@ -8,7 +8,20 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
-const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+const MIGRATION_SOURCES = [
+  { prefix: '', dir: path.join(__dirname, 'migrations') },
+  { prefix: 'wallet::', dir: path.join(__dirname, '..', '..', 'wallet-service', 'migrations') },
+];
+
+function migrationFiles() {
+  return MIGRATION_SOURCES.flatMap(({ prefix, dir }) => {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .map((file) => ({ name: `${prefix}${file}`, path: path.join(dir, file) }));
+  });
+}
 
 async function main() {
   const cmd = process.argv[2] || 'up';
@@ -18,6 +31,9 @@ async function main() {
 
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
+  // Serialize migration runners across replicas/deployments. The connection
+  // closing on failure also releases the PostgreSQL session-level lock.
+  await client.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', ['rial.schema.migrations']);
 
   await client.query(`
     CREATE TABLE IF NOT EXISTS _migrations (
@@ -28,14 +44,14 @@ async function main() {
   `);
 
   if (cmd === 'up') {
-    const all = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
-    for (const f of all) {
-      const { rows } = await client.query('SELECT 1 FROM _migrations WHERE name=$1', [f]);
-      if (rows.length) { console.log(`skip   ${f}`); continue; }
-      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8');
-      console.log(`apply  ${f}`);
+    const all = migrationFiles();
+    for (const migration of all) {
+      const { rows } = await client.query('SELECT 1 FROM _migrations WHERE name=$1', [migration.name]);
+      if (rows.length) { console.log(`skip   ${migration.name}`); continue; }
+      const sql = fs.readFileSync(migration.path, 'utf8');
+      console.log(`apply  ${migration.name}`);
       await client.query('BEGIN');
-      try { await client.query(sql); await client.query('INSERT INTO _migrations(name) VALUES($1)', [f]); await client.query('COMMIT'); }
+      try { await client.query(sql); await client.query('INSERT INTO _migrations(name) VALUES($1)', [migration.name]); await client.query('COMMIT'); }
       catch (e) { await client.query('ROLLBACK'); throw e; }
     }
     console.log('migrations: up-to-date');
@@ -55,6 +71,7 @@ async function main() {
     process.exit(1);
   }
 
+  await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', ['rial.schema.migrations']);
   await client.end();
 }
 main().catch(e => { console.error(e); process.exit(1); });

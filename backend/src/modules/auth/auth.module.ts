@@ -12,6 +12,8 @@ import { PasswordService } from './password.service';
 import { SessionService } from './session.service';
 import { UserRepository } from './user.repository';
 import { MfaService } from './mfa.service';
+import { SecurityAuditService } from '../../common/security/security-audit.service';
+import { SecretEnvelopeService } from '../../common/security/secret-envelope.service';
 
 @Module({
   imports: [
@@ -30,7 +32,7 @@ import { MfaService } from './mfa.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthResolver, TokenService, PasswordService, SessionService, UserRepository, MfaService],
-  exports: [AuthService, TokenService, UserRepository, JwtModule],
+  providers: [AuthService, AuthResolver, TokenService, PasswordService, SessionService, UserRepository, MfaService, SecurityAuditService, SecretEnvelopeService],
+  exports: [AuthService, TokenService, UserRepository, SecurityAuditService, SecretEnvelopeService, JwtModule],
 })
 export class AuthModule {}

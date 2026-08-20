@@ -4,7 +4,6 @@
 // =============================================================================
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
 import { request as httpsRequest } from 'node:https';
 import { URL } from 'node:url';
 import {
@@ -112,10 +111,18 @@ export class ZarinPalAdapter implements PaymentAdapter {
     if (input.kind !== 'deposit') {
       throw new PaymentError('UNSUPPORTED_KIND', 'zarinpal adapter only supports deposit in this build');
     }
-    // ZarinPal amounts are in Tomans (IRR / 10) or full IRR depending on merchant config.
-    // We treat input.amount.amountMinor as IRR (rial) and convert to Tomans by /10.
-    const tomans = input.amount.amountMinor / 10n;
+    // Public payment contract uses whole Iranian rial (IRR) or whole toman (IRT).
+    // ZarinPal expects whole toman: 1 toman = 10 rial. The internal wallet
+    // conversion to 8-decimal RIAL happens only after provider verification.
+    if (input.amount.currency !== 'IRR' && input.amount.currency !== 'IRT') {
+      throw new PaymentError('UNSUPPORTED_CURRENCY', 'zarinpal accepts IRR or IRT only');
+    }
+    if (input.amount.currency === 'IRR' && input.amount.amountMinor % 10n !== 0n) {
+      throw new PaymentError('INVALID_AMOUNT', 'IRR amount must be divisible by 10 because ZarinPal accepts whole toman');
+    }
+    const tomans = input.amount.currency === 'IRR' ? input.amount.amountMinor / 10n : input.amount.amountMinor;
     if (tomans <= 0n) throw new PaymentError('INVALID_AMOUNT', 'amount too small');
+    if (tomans > BigInt(Number.MAX_SAFE_INTEGER)) throw new PaymentError('INVALID_AMOUNT', 'amount exceeds PSP safe integer range');
 
     const resp = await this.call<ZarinPalRequestResp>('/request.json', {
       merchant_id: this.cfg.merchantId,
@@ -155,7 +162,6 @@ export class ZarinPalAdapter implements PaymentAdapter {
       return {
         externalId,
         status: 'succeeded',
-        settledAmount: { amountMinor: 0n, currency: 'IRR' },
         rawResponse: { ref_id: resp.data.ref_id, code },
       };
     }

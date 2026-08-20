@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
 
 export interface User {
   id: string;
@@ -31,50 +31,44 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
 
-const STORAGE_KEY = 'rial_token';
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [state, setState] = React.useState<AuthState>({ user: null, loading: true });
 
   const refresh = React.useCallback(async () => {
-    if (typeof window === 'undefined' || !localStorage.getItem(STORAGE_KEY)) {
+    if (typeof window === 'undefined') {
       setState((s) => ({ ...s, loading: false }));
       return;
     }
     try {
       const user = await api.get<User>('/api/auth/me');
       setState({ user, loading: false });
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+    } catch {
       setState({ user: null, loading: false });
     }
   }, []);
 
   React.useEffect(() => {
+    if (typeof window !== 'undefined') window.localStorage.removeItem('rial_token');
     refresh();
   }, [refresh]);
 
   const login = React.useCallback(
     async (email: string, password: string, mfaCode?: string) => {
-      const res = await api.post<{ accessToken: string; user: User }>('/api/auth/login', { email, password, mfaCode });
-      localStorage.setItem(STORAGE_KEY, res.accessToken);
-      setState({ user: res.user, loading: false });
+      await api.post('/api/auth/login', { identifier: email, password, mfaCode });
+      await refresh();
       router.push('/portfolio');
     },
-    [router]
+    [refresh, router]
   );
 
   const register = React.useCallback(
     async (email: string, password: string, username: string) => {
-      const res = await api.post<{ accessToken: string; user: User }>('/api/auth/register', { email, password, username });
-      localStorage.setItem(STORAGE_KEY, res.accessToken);
-      setState({ user: res.user, loading: false });
+      await api.post('/api/auth/register', { email, password, username });
+      await refresh();
       router.push('/portfolio');
     },
-    [router]
+    [refresh, router]
   );
 
   const logout = React.useCallback(async () => {
@@ -83,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
-    localStorage.removeItem(STORAGE_KEY);
     setState({ user: null, loading: false });
     router.push('/');
   }, [router]);

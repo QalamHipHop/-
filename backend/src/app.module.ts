@@ -6,7 +6,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR, APP_FILTER } from '@nestjs/core';
 import { TerminusModule } from '@nestjs/terminus';
@@ -28,10 +27,12 @@ import { EventsModule } from './modules/events/events.module';
 import { TradingModule } from './modules/trading/trading.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { LaunchpadModule } from './modules/launchpad/launchpad.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.interceptor';
+import { MetricsService } from './infrastructure/metrics/metrics';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 @Module({
@@ -53,7 +54,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
               ? undefined
               : { target: 'pino-pretty', options: { colorize: true, singleLine: true } },
           redact: ['req.headers.authorization', 'req.headers.cookie', '*.password', '*.secret'],
-          autoLogging: { ignore: (req) => req.url === '/healthz' || req.url === '/readyz' },
+          autoLogging: { ignore: (req) => req.url === '/v1/healthz' || req.url === '/v1/readyz' },
           customProps: () => ({ service: 'rial-backend', env: config.get('app.env') }),
         },
       }),
@@ -92,8 +93,10 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
     TradingModule,
     WalletModule,
     LaunchpadModule,
+    AdminModule,
   ],
   providers: [
+    MetricsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },

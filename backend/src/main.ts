@@ -5,19 +5,23 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import fastifyCookie from '@fastify/cookie';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Logger as PinoLogger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
-import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { IdempotencyMiddleware } from './common/middleware/idempotency.middleware';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { setupGracefulShutdown } from './common/utils/graceful-shutdown';
 import { bootstrapTelemetry } from './infrastructure/tracing/telemetry';
 import { REDIS_CLIENT } from './infrastructure/redis/redis.module';
+import { MetricsService } from './infrastructure/metrics/metrics';
+
+function authCookieName(config: ConfigService, kind: 'access' | 'refresh'): string {
+  return config.get<string>(kind === 'access' ? 'auth.session.cookieName' : 'auth.session.refreshCookieName') ?? (kind === 'access' ? 'rial_session' : 'rial_refresh');
+}
 
 async function bootstrap(): Promise<void> {
   // OpenTelemetry must be initialized before any other instrumentation.
@@ -36,6 +40,7 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService);
   const logger = app.get(PinoLogger);
+  const metrics = app.get(MetricsService);
   app.useLogger(logger as any);
 
   // --- security & global pipes/filters ----------------------------------
@@ -48,6 +53,33 @@ async function bootstrap(): Promise<void> {
   });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.setGlobalPrefix('api', { exclude: ['healthz', 'readyz', 'metrics', 'graphql'] });
+  const http = app.getHttpAdapter().getInstance();
+  await http.register(fastifyCookie as any);
+  const csrfMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  const csrfCookieNames = new Set([
+    authCookieName(config, 'access'),
+    authCookieName(config, 'refresh'),
+  ]);
+  http.addHook('onRequest', (request: any, reply: any, done: () => void) => {
+    if (!csrfMethods.has(String(request.method).toUpperCase())) return done();
+    const cookies = request.cookies ?? {};
+    const hasSessionCookie = [...csrfCookieNames].some((name) => Boolean(cookies[name]));
+    if (!hasSessionCookie) return done();
+    const origin = String(request.headers?.origin ?? '');
+    const allowedOrigins = config.get<string[]>('cors.origins') ?? [];
+    if (!origin || !allowedOrigins.includes(origin)) {
+      reply.code(403).send({ code: 'CSRF_ORIGIN_REJECTED' });
+      return;
+    }
+    done();
+  });
+  http.addHook('onResponse', (_request: unknown, reply: any, done: () => void) => {
+    metrics.observeRequest(reply.statusCode);
+    done();
+  });
+  http.get('/metrics', async (_request: unknown, reply: any) => {
+    reply.type('text/plain; version=0.0.4').send(metrics.render());
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -57,8 +89,6 @@ async function bootstrap(): Promise<void> {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter());
-  app.useGlobalInterceptors(new ResponseInterceptor());
 
   // --- middleware (Fastify order matters) -------------------------------
   app.use(new CorrelationIdMiddleware().use.bind(new CorrelationIdMiddleware()));
@@ -89,7 +119,7 @@ async function bootstrap(): Promise<void> {
   logger.log(`GraphQL:  http://${host}:${port}/graphql`);
   logger.log(`REST:     http://${host}:${port}/api/v1/*`);
   logger.log(`WebSocket: ws://${host}:${port}/ws`);
-  logger.log(`Health:   http://${host}:${port}/healthz`);
+  logger.log(`Health:   http://${host}:${port}/v1/healthz`);
   logger.log(`Settlement token: ${config.get<string>('settlement.symbol', 'RIAL')}`);
 }
 

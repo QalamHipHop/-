@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number, currency = 'USD', opts?: Intl.NumberFormatOptions) {
+export function formatCurrency(value: number, currency = 'IRR', opts?: Intl.NumberFormatOptions) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
@@ -25,7 +25,12 @@ export function formatNumber(value: number, opts?: Intl.NumberFormatOptions) {
 
 export function formatPercent(value: number, opts?: Intl.NumberFormatOptions) {
   const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+  const formatted = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    ...opts,
+  }).format(Math.abs(value));
+  return `${sign}${value < 0 ? '-' : ''}${formatted}%`;
 }
 
 export function shortenAddress(addr: string, chars = 4) {

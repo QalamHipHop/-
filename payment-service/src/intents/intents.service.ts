@@ -8,7 +8,8 @@ import { AppConfig } from '../config/configuration';
 import { randomUUID } from 'node:crypto';
 import { AdapterRegistry } from '../adapters/adapter.registry';
 import { Money, PaymentError } from '../adapters/types';
-import { IntentStore, ListFilter } from './intent.store';
+import { IntentStore, ListFilter, PaymentRefund } from './intent.store';
+import { WalletSettlementClient } from '../settlement/wallet-settlement.client';
 import { IntentJSON, IntentKind, IntentStatus, PaymentIntent, intentToJSON } from './intent.entity';
 
 export interface CreateDepositArgs {
@@ -37,6 +38,7 @@ export class IntentsService {
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly registry: AdapterRegistry,
     private readonly store: IntentStore,
+    private readonly wallet?: WalletSettlementClient,
   ) {}
 
   async createDeposit(args: CreateDepositArgs): Promise<IntentJSON> {
@@ -120,6 +122,51 @@ export class IntentsService {
     return intentToJSON(intent);
   }
 
+  async refund(id: string, userId: string, amount: Money | undefined, reason: string, idempotencyKey: string): Promise<PaymentRefund> {
+    const intent = await this.store.get(id);
+    if (!intent) throw new NotFoundException('intent not found: ' + id);
+    if (intent.userId !== userId) throw new BadRequestException('intent does not belong to user');
+    if (intent.kind !== 'deposit' || intent.status !== 'succeeded') throw new BadRequestException('only succeeded deposits can be refunded');
+    const refundAmount = amount ?? intent.settledAmount ?? intent.amount;
+    if (refundAmount.currency !== intent.amount.currency || refundAmount.amountMinor <= 0n || refundAmount.amountMinor > (intent.settledAmount ?? intent.amount).amountMinor) {
+      throw new BadRequestException('refund amount is invalid');
+    }
+    const existing = await this.store.findRefundByIdempotency(userId, idempotencyKey);
+    if (existing) return existing;
+    const refund: PaymentRefund = { id: 'rf_' + randomUUID(), intentId: id, userId, amountMinor: refundAmount.amountMinor, currency: refundAmount.currency, idempotencyKey, status: 'requested', reason };
+    const created = await this.store.createRefund(refund);
+    if (!created) {
+      const winner = await this.store.findRefundByIdempotency(userId, idempotencyKey);
+      if (!winner) throw new Error('PAYMENT_REFUND_IDEMPOTENCY_LOOKUP_FAILED');
+      return winner;
+    }
+    const adapter = this.registry.get(intent.adapter);
+    if (!adapter.refund || !intent.externalId) {
+      created.status = 'failed';
+      created.failureReason = 'REFUND_UNSUPPORTED_BY_ADAPTER';
+      return this.store.saveRefund(created);
+    }
+    created.status = 'processing';
+    await this.store.saveRefund(created);
+    try {
+      const result = await adapter.refund(intent.externalId, refundAmount, reason, idempotencyKey);
+      created.externalId = result.externalId;
+      created.status = result.status === 'succeeded' ? 'succeeded' : result.status === 'failed' ? 'failed' : 'processing';
+      created.failureReason = result.failureReason;
+      if (created.status === 'succeeded') { intent.status = 'refunded'; await this.store.save(intent); }
+    } catch (e) {
+      created.status = 'failed';
+      created.failureReason = (e as Error).message;
+    }
+    return this.store.saveRefund(created);
+  }
+
+  async listRefunds(id: string, userId: string): Promise<PaymentRefund[]> {
+    const intent = await this.store.get(id);
+    if (!intent || intent.userId !== userId) throw new NotFoundException('intent not found: ' + id);
+    return this.store.listRefunds(id);
+  }
+
   async get(id: string): Promise<IntentJSON> {
     const it = await this.store.get(id);
     if (!it) throw new NotFoundException('intent not found: ' + id);
@@ -149,12 +196,83 @@ export class IntentsService {
   }
 
   async applyVerifyResult(id: string, status: IntentStatus, settledAmount?: Money, reason?: string): Promise<IntentJSON | null> {
-    const it = await this.store.get(id);
+    let it = await this.store.get(id);
     if (!it) return null;
-    it.status = status;
+
+    // Provider callbacks can arrive out of order. A terminal intent must not be
+    // reopened by an older webhook, and a duplicate succeeded callback must not
+    // call the settlement boundary again unnecessarily.
+    if (it.status === 'refunded') return intentToJSON(it);
+    if (it.status === 'succeeded' && status !== 'succeeded') return intentToJSON(it);
+    if ((it.status === 'failed' || it.status === 'cancelled' || it.status === 'expired') && status !== it.status) {
+      return intentToJSON(it);
+    }
+    const alreadySucceeded = it.status === 'succeeded';
     if (settledAmount) it.settledAmount = settledAmount;
-    if (reason) it.failureReason = reason;
+    if (reason && !alreadySucceeded) it.failureReason = reason;
+
+    // Provider success is durable before the wallet boundary is attempted.
+    // A wallet outage must become retryable settlement state, never a lost deposit.
+    if (status === 'succeeded' && it.kind === 'deposit') {
+      if (alreadySucceeded && it.settlementStatus === 'succeeded') return intentToJSON(it);
+      const money = this.toRialSettlement(settledAmount ?? it.settledAmount ?? it.amount);
+      if (!alreadySucceeded) {
+        it.status = 'succeeded';
+        if (settledAmount) it.settledAmount = settledAmount;
+        const saved = await this.store.save(it);
+        await this.store.markSettlementPending(saved.id);
+        it = saved;
+      }
+      if (!this.wallet) {
+        await this.store.markSettlementFailed(it.id, 'WALLET_SETTLEMENT_UNAVAILABLE');
+        return intentToJSON(it);
+      }
+      try {
+        const txId = await this.wallet.creditDeposit({
+          userId: it.userId,
+          amountMinor: money.amountMinor,
+          currency: money.currency,
+          reference: it.reference,
+          idempotencyKey: `payment-deposit:${it.id}`,
+          metadata: { intentId: it.id, externalId: it.externalId ?? null, adapter: it.adapter },
+        });
+        await this.store.markSettlementSucceeded(it.id, txId);
+      } catch (error) {
+        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error));
+      }
+      return intentToJSON((await this.store.get(it.id)) ?? it);
+    }
+    it.status = status;
     return intentToJSON(await this.store.save(it));
+  }
+
+  async retryPendingSettlements(limit = 50): Promise<number> {
+    if (!this.wallet) return 0;
+    const pending = await this.store.listSettlementRecovery(limit);
+    let completed = 0;
+    for (const it of pending) {
+      let money: Money;
+      try { money = this.toRialSettlement(it.settledAmount ?? it.amount); }
+      catch (error) {
+        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error));
+        continue;
+      }
+      try {
+        const txId = await this.wallet.creditDeposit({
+          userId: it.userId,
+          amountMinor: money.amountMinor,
+          currency: money.currency,
+          reference: it.reference,
+          idempotencyKey: `payment-deposit:${it.id}`,
+          metadata: { intentId: it.id, externalId: it.externalId ?? null, adapter: it.adapter, recovery: true },
+        });
+        await this.store.markSettlementSucceeded(it.id, txId);
+        completed += 1;
+      } catch (error) {
+        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error));
+      }
+    }
+    return completed;
   }
 
   async findByExternalId(adapter: string, externalId: string): Promise<PaymentIntent | undefined> {
@@ -166,6 +284,23 @@ export class IntentsService {
       throw new BadRequestException(`idempotency key already used for a ${existing.kind}`);
     }
     return intentToJSON(existing);
+  }
+
+  /**
+   * Fiat intents use whole IRR or IRT units; the wallet ledger uses RIAL with
+   * eight decimal places. Conversion is explicit and integer-only: 1 toman =
+   * 10 rial, and one internal RIAL major unit = 100,000,000 minor units.
+   */
+  private toRialSettlement(money: Money): Money {
+    if (money.amountMinor <= 0n) throw new PaymentError('INVALID_SETTLEMENT_AMOUNT', 'settled amount must be positive', false);
+    const maxLedgerMinor = (1n << 63n) - 1n;
+    let amountMinor: bigint;
+    if (money.currency === 'RIAL') amountMinor = money.amountMinor;
+    else if (money.currency === 'IRR') amountMinor = money.amountMinor * 100_000_000n;
+    else if (money.currency === 'IRT') amountMinor = money.amountMinor * 1_000_000_000n;
+    else throw new PaymentError('UNSUPPORTED_SETTLEMENT_CURRENCY', `cannot credit ${money.currency} into RIAL wallet`, false);
+    if (amountMinor > maxLedgerMinor) throw new PaymentError('INVALID_SETTLEMENT_AMOUNT', 'settled amount exceeds RIAL ledger int64 range', false);
+    return { currency: 'RIAL', amountMinor };
   }
 
   private assertAmountInRange(amount: Money, kind: IntentKind): void {

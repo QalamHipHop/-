@@ -19,6 +19,19 @@ export interface ListResult {
   total: number;
 }
 
+export interface PaymentRefund {
+  id: string;
+  intentId: string;
+  userId: string;
+  amountMinor: bigint;
+  currency: string;
+  idempotencyKey: string;
+  status: 'requested' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
+  externalId?: string;
+  reason: string;
+  failureReason?: string;
+}
+
 type IntentRow = {
   id: string;
   kind: IntentKind;
@@ -40,6 +53,12 @@ type IntentRow = {
   created_at: Date | string;
   updated_at: Date | string;
   expires_at: Date | string | null;
+  settlement_status?: 'not_required' | 'pending' | 'succeeded' | 'failed';
+  settlement_attempts?: number;
+  settlement_next_attempt_at?: Date | string | null;
+  settlement_last_error?: string | null;
+  settlement_tx_id?: string | null;
+  settled_at?: Date | string | null;
 };
 
 @Injectable()
@@ -70,6 +89,57 @@ export class IntentStore {
     return r.rows.length === 1;
   }
 
+  async createRefund(refund: PaymentRefund): Promise<PaymentRefund | null> {
+    const r = await this.db.query(`INSERT INTO payments.refunds (id, intent_id, user_id, amount_minor, currency, idempotency_key, status, reason, metadata) VALUES ($1,$2,$3::uuid,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING *`, [refund.id, refund.intentId, refund.userId, refund.amountMinor.toString(), refund.currency, refund.idempotencyKey, refund.status, refund.reason, JSON.stringify({})]);
+    return r.rows[0] ? this.toRefund(r.rows[0]) : null;
+  }
+
+  async findRefundByIdempotency(userId: string, key: string): Promise<PaymentRefund | undefined> {
+    const r = await this.db.query('SELECT * FROM payments.refunds WHERE user_id = $1::uuid AND idempotency_key = $2', [userId, key]);
+    return r.rows[0] ? this.toRefund(r.rows[0]) : undefined;
+  }
+
+  async saveRefund(refund: PaymentRefund): Promise<PaymentRefund> {
+    const r = await this.db.query(`UPDATE payments.refunds SET status=$2, external_id=$3, failure_reason=$4 WHERE id=$1 RETURNING *`, [refund.id, refund.status, refund.externalId ?? null, refund.failureReason ?? null]);
+    if (!r.rows[0]) throw new Error(`PAYMENT_REFUND_NOT_FOUND: ${refund.id}`);
+    return this.toRefund(r.rows[0]);
+  }
+
+  async listRefunds(intentId: string): Promise<PaymentRefund[]> {
+    const r = await this.db.query('SELECT * FROM payments.refunds WHERE intent_id = $1 ORDER BY created_at DESC', [intentId]);
+    return r.rows.map((row) => this.toRefund(row));
+  }
+
+  async markSettlementPending(id: string): Promise<void> {
+    await this.db.query(`UPDATE payments.payment_intents
+      SET status='succeeded', settlement_status='pending', settlement_last_error=NULL,
+          settlement_next_attempt_at=now()
+      WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'`, [id]);
+  }
+
+  async markSettlementFailed(id: string, error: string): Promise<void> {
+    await this.db.query(`UPDATE payments.payment_intents
+      SET settlement_status='failed', settlement_attempts=settlement_attempts+1,
+          settlement_last_error=$2,
+          settlement_next_attempt_at=now() + (LEAST(300, POWER(2, LEAST(settlement_attempts + 1, 8))) * interval '1 second')
+      WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'`, [id, error]);
+  }
+
+  async markSettlementSucceeded(id: string, txId: string): Promise<void> {
+    await this.db.query(`UPDATE payments.payment_intents
+      SET settlement_status='succeeded', settlement_tx_id=$2, settled_at=now(), settlement_last_error=NULL,
+          settlement_next_attempt_at=NULL
+      WHERE id=$1 AND kind='deposit' AND status='succeeded'`, [id, txId]);
+  }
+
+  async listSettlementRecovery(limit = 50): Promise<PaymentIntent[]> {
+    const r = await this.db.query<IntentRow>(`SELECT * FROM payments.payment_intents
+      WHERE kind='deposit' AND status='succeeded' AND settlement_status IN ('pending','failed')
+        AND (settlement_next_attempt_at IS NULL OR settlement_next_attempt_at <= now())
+      ORDER BY updated_at ASC LIMIT $1`, [Math.min(Math.max(limit, 1), 200)]);
+    return r.rows.map((row) => this.toDomain(row));
+  }
+
   async save(intent: PaymentIntent): Promise<PaymentIntent> {
     const r = await this.db.query<IntentRow>(
       `UPDATE payments.payment_intents
@@ -96,6 +166,48 @@ export class IntentStore {
     );
     if (!r.rows[0]) throw new Error(`PAYMENT_INTENT_NOT_FOUND: ${intent.id}`);
     return this.toDomain(r.rows[0]);
+  }
+
+  /** Record a provider event exactly once before applying its state transition. */
+  async recordWebhookEvent(event: { id: string; adapter: string; externalId: string; type: string; payload: unknown }): Promise<boolean> {
+    const r = await this.db.query(
+      `INSERT INTO payments.webhook_events (id, adapter, external_id, type, payload, processing_started_at, processing_attempts)
+       VALUES ($1,$2,$3,$4,$5::jsonb,now(),1)
+       ON CONFLICT (adapter, external_id, type) DO NOTHING
+       RETURNING id`,
+      [event.id, event.adapter, event.externalId, event.type, JSON.stringify(event.payload ?? {})],
+    );
+    return r.rows.length === 1;
+  }
+
+  async claimWebhookEvent(adapter: string, externalId: string, type: string): Promise<boolean> {
+    const r = await this.db.query(
+      `UPDATE payments.webhook_events
+          SET processing_started_at = now(), processing_attempts = processing_attempts + 1
+        WHERE adapter=$1 AND external_id=$2 AND type=$3
+          AND processed_at IS NULL
+          AND (processing_started_at IS NULL OR processing_started_at < now() - interval '5 minutes')
+        RETURNING id`,
+      [adapter, externalId, type],
+    );
+    return r.rows.length === 1;
+  }
+
+  async markWebhookProcessed(adapter: string, externalId: string, type: string): Promise<void> {
+    await this.db.query(
+      `UPDATE payments.webhook_events SET processed_at = now()
+       WHERE adapter=$1 AND external_id=$2 AND type=$3`,
+      [adapter, externalId, type],
+    );
+  }
+
+  async isWebhookProcessed(adapter: string, externalId: string, type: string): Promise<boolean> {
+    const r = await this.db.query<{ processed_at: Date | null }>(
+      `SELECT processed_at FROM payments.webhook_events
+       WHERE adapter=$1 AND external_id=$2 AND type=$3`,
+      [adapter, externalId, type],
+    );
+    return r.rows[0]?.processed_at !== null && r.rows[0]?.processed_at !== undefined;
   }
 
   async get(id: string): Promise<PaymentIntent | undefined> {
@@ -145,6 +257,10 @@ export class IntentStore {
     return { items: rows.rows.map((row) => this.toDomain(row)), total: Number(count.rows[0]?.total ?? '0') };
   }
 
+  private toRefund(row: any): PaymentRefund {
+    return { id: row.id, intentId: row.intent_id, userId: row.user_id, amountMinor: BigInt(row.amount_minor), currency: row.currency, idempotencyKey: row.idempotency_key, status: row.status, externalId: row.external_id ?? undefined, reason: row.reason, failureReason: row.failure_reason ?? undefined };
+  }
+
   private toDomain(row: IntentRow): PaymentIntent {
     return {
       id: row.id,
@@ -152,6 +268,7 @@ export class IntentStore {
       userId: row.user_id,
       adapter: row.adapter,
       status: row.status,
+      settlementStatus: row.settlement_status ?? undefined,
       amount: { amountMinor: BigInt(row.amount_minor), currency: row.currency },
       settledAmount: row.settled_amount_minor === null
         ? undefined

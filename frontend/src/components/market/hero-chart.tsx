@@ -1,9 +1,11 @@
 'use client';
 
 import { Activity } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 import { Badge } from '@/components/ui/badge';
 
 export function HeroChart() {
+  const { t } = useI18n();
   return (
     <div className="relative rounded-xl border bg-card/50 backdrop-blur p-6 shadow-xl">
       <div className="flex items-center gap-3 mb-6">
@@ -12,10 +14,10 @@ export function HeroChart() {
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-semibold">Live market terminal</span>
-            <Badge variant="warning" className="text-[10px]">Awaiting data</Badge>
+            <span className="font-semibold">{t('liveTerminal')}</span>
+            <Badge variant="warning" className="text-[10px]">{t('awaitingData')}</Badge>
           </div>
-          <div className="text-xs text-muted-foreground">A live chart appears after the trading data service is connected.</div>
+          <div className="text-xs text-muted-foreground">{t('chartDescription')}</div>
         </div>
       </div>
       <div className="h-[280px] rounded-lg border border-dashed bg-muted/10 flex items-center justify-center text-center p-8">

@@ -35,7 +35,6 @@ contract Timelock is AccessControl {
     error AlreadyExecuted();
     error CallFailed();
     error UnauthorizedProposer();
-    error UnauthorizedExecutor();
 
     constructor(address admin, uint256 delay) {
         if (delay < MIN_DELAY || delay > MAX_DELAY) revert InsufficientDelay();
@@ -53,7 +52,10 @@ contract Timelock is AccessControl {
         emit OperationQueued(id, target, value, data, eta);
     }
 
-    function execute(address target, uint256 value, bytes calldata data, uint256 eta) external payable onlyRole(EXECUTOR_ROLE) returns (bytes32 id) {
+    // Execution is intentionally permissionless after the timelock delay. The
+    // queued operation hash and eta are the authorization boundary; granting
+    // EXECUTOR_ROLE to address(0) does not create a wildcard in OZ AccessControl.
+    function execute(address target, uint256 value, bytes calldata data, uint256 eta) external payable returns (bytes32 id) {
         id = keccak256(abi.encode(target, value, data, eta));
         Operation storage op = operations[id];
         if (op.executed) revert AlreadyExecuted();

@@ -13,6 +13,13 @@ metrics:
   addr: "0.0.0.0:9101"
   namespace: "rial_matching"
 
+# Runtime environment: MATCHING_SNAPSHOT_PATH=/var/lib/rial/matching/state.json
+# Mount this path on durable storage. If unset, the engine is intentionally in-memory.
+# Trade bridge environment: MATCHING_NATS_URL=nats://nats:4222
+# Optional subject override: MATCHING_TRADE_SUBJECT=trading.trade.executed
+persistence:
+  snapshot_path: "/var/lib/rial/matching/state.json"
+
 fees:
   taker_bps: 30
   maker_bps: 10
@@ -25,5 +32,5 @@ markets:
 broadcast:
   nats:
     url: "nats://nats:4222"
-    subject_trades: "trades.>"
-    subject_book: "book.>"
+    subject_trades: "trading.trade.executed"
+    subject_book: "trading.orderbook.updated"

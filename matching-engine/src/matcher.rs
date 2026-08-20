@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct FeeSchedule {
     /// Taker fee in basis points (1 bp = 0.01%).
     pub taker_bps: u32,
@@ -20,7 +20,10 @@ pub struct FeeSchedule {
 
 impl Default for FeeSchedule {
     fn default() -> Self {
-        Self { taker_bps: 30, maker_bps: 10 }
+        Self {
+            taker_bps: 30,
+            maker_bps: 10,
+        }
     }
 }
 
@@ -46,11 +49,53 @@ pub struct Engine {
     default_fees: FeeSchedule,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EngineSnapshot {
+    pub markets: Vec<MarketSnapshot>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MarketSnapshot {
+    pub name: String,
+    pub book: OrderBook,
+    pub fees: FeeSchedule,
+}
+
 impl Engine {
     pub fn new(default_fees: FeeSchedule) -> Self {
         Self {
             markets: dashmap::DashMap::new(),
             default_fees,
+        }
+    }
+
+    pub fn snapshot_state(&self) -> EngineSnapshot {
+        let markets = self
+            .markets
+            .iter()
+            .map(|entry| {
+                let market = entry.value().lock();
+                MarketSnapshot {
+                    name: market.name.clone(),
+                    book: market.book.clone(),
+                    fees: market.fees,
+                }
+            })
+            .collect();
+        EngineSnapshot { markets }
+    }
+
+    pub fn restore_state(&self, snapshot: EngineSnapshot) {
+        self.markets.clear();
+        for market in snapshot.markets {
+            self.markets.insert(
+                market.name.clone(),
+                Arc::new(Mutex::new(Market {
+                    name: market.name,
+                    book: market.book,
+                    fees: market.fees,
+                })),
+            );
         }
     }
 
@@ -84,11 +129,19 @@ impl Engine {
                 let fillable = self.peek_fillable(book, &order);
                 if fillable < initial_remaining {
                     order.status = OrderStatus::Rejected;
-                    SubmitResult { fully_filled: false, order, trades }
+                    SubmitResult {
+                        fully_filled: false,
+                        order,
+                        trades,
+                    }
                 } else {
                     self.cross(book, &mut order, &mut trades, fees);
                     let fully_filled = order.remaining_quantity.is_zero();
-                    SubmitResult { fully_filled, order, trades }
+                    SubmitResult {
+                        fully_filled,
+                        order,
+                        trades,
+                    }
                 }
             }
             TimeInForce::Ioc => {
@@ -101,7 +154,11 @@ impl Engine {
                     };
                 }
                 let fully_filled = order.remaining_quantity.is_zero();
-                SubmitResult { fully_filled, order, trades }
+                SubmitResult {
+                    fully_filled,
+                    order,
+                    trades,
+                }
             }
             TimeInForce::Gtc | TimeInForce::Gtd | TimeInForce::Day => {
                 self.cross(book, &mut order, &mut trades, fees);
@@ -111,7 +168,11 @@ impl Engine {
                     book.insert_resting(order.clone());
                 }
                 let fully_filled = order.remaining_quantity.is_zero();
-                SubmitResult { fully_filled, order, trades }
+                SubmitResult {
+                    fully_filled,
+                    order,
+                    trades,
+                }
             }
         }
     }
@@ -135,18 +196,31 @@ impl Engine {
 
     fn peek_fillable(&self, book: &OrderBook, order: &Order) -> Decimal {
         let mut fillable = zero();
-        let opp_book = match order.side {
-            Side::Buy => &book.asks,
-            Side::Sell => &book.bids,
-        };
-        for (price, queue) in opp_book.iter() {
-            if !self.price_crosses(order, *price) {
-                break;
+        match order.side {
+            Side::Buy => {
+                for (price, queue) in book.asks.iter() {
+                    if !self.price_crosses(order, *price) {
+                        break;
+                    }
+                    for o in queue.iter() {
+                        fillable += o.remaining_quantity;
+                        if fillable >= order.remaining_quantity {
+                            return order.remaining_quantity;
+                        }
+                    }
+                }
             }
-            for o in queue.iter() {
-                fillable += o.remaining_quantity;
-                if fillable >= order.remaining_quantity {
-                    return order.remaining_quantity;
+            Side::Sell => {
+                for (price, queue) in book.bids.iter().rev() {
+                    if !self.price_crosses(order, *price) {
+                        break;
+                    }
+                    for o in queue.iter() {
+                        fillable += o.remaining_quantity;
+                        if fillable >= order.remaining_quantity {
+                            return order.remaining_quantity;
+                        }
+                    }
                 }
             }
         }
@@ -172,13 +246,17 @@ impl Engine {
         // committed after the borrow ends, retaining monotonic event ordering.
         let market = book.market.clone();
         let mut sequence = book.sequence;
+        let mut empty_prices: Vec<Decimal> = Vec::new();
         let opp_book = match taker.side {
             Side::Buy => &mut book.asks,
             Side::Sell => &mut book.bids,
         };
-        let mut empty_prices: Vec<Decimal> = Vec::new();
 
-        for (price, queue) in opp_book.iter_mut() {
+        let iterator = match taker.side {
+            Side::Buy => opp_book.iter_mut().collect::<Vec<_>>(),
+            Side::Sell => opp_book.iter_mut().rev().collect::<Vec<_>>(),
+        };
+        for (price, queue) in iterator {
             if !self.price_crosses(taker, *price) {
                 break;
             }
@@ -194,7 +272,8 @@ impl Engine {
                 }
                 let notional = *price * qty;
                 let taker_fee = notional * Decimal::from(fees.taker_bps) / Decimal::from(10_000u32);
-                let maker_fee = notional * Decimal::from(fees.maker_bps.max(0) as u32) / Decimal::from(10_000u32);
+                let maker_fee = notional * Decimal::from(fees.maker_bps.max(0) as u32)
+                    / Decimal::from(10_000u32);
                 sequence += 1;
                 let trade = Trade::new(
                     market.clone(),
@@ -209,6 +288,13 @@ impl Engine {
                 maker.fill(qty);
                 taker.fill(qty);
                 trades.push(trade);
+            }
+            while queue
+                .front()
+                .map(|order| order.remaining_quantity.is_zero())
+                .unwrap_or(false)
+            {
+                queue.pop_front();
             }
             if queue.is_empty() {
                 empty_prices.push(*price);
@@ -228,5 +314,6 @@ impl Engine {
 pub struct SubmitResult {
     pub order: Order,
     pub trades: Vec<Trade>,
+    #[allow(dead_code)]
     pub fully_filled: bool,
 }

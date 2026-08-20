@@ -210,8 +210,8 @@ export class WalletRepository {
   }
 
   /** Treasury / fee / reward special accounts (created on demand). */
-  async ensureSystemAccount(accountType: AccountType, currency: Currency, label?: string): Promise<Account> {
-    const existing = await this.findAccount('service', `system:${accountType}`, accountType, currency);
+  async ensureSystemAccount(accountType: AccountType, currency: Currency, label?: string, c?: PoolClient): Promise<Account> {
+    const existing = await this.findAccount('service', `system:${accountType}`, accountType, currency, c);
     if (existing) return existing;
     return this.createAccount({
       owner_type: 'service',
@@ -221,7 +221,7 @@ export class WalletRepository {
       address: null,
       label: label ?? `System ${accountType} (${currency})`,
       meta: { system: true },
-    });
+    }, c);
   }
 }
 

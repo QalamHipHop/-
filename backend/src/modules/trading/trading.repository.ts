@@ -7,7 +7,7 @@ import type { PoolClient, QueryResultRow } from 'pg';
 
 type Queryable = { query<T extends QueryResultRow = QueryResultRow>(sql: string, params?: ReadonlyArray<unknown>): Promise<{ rows: T[] }> };
 import { DbService } from '../../infrastructure/database/db.service';
-import type { Market, MarketKind, Order, OrderSide, OrderStatus, OrderTIF, OrderType, Trade } from './trading.types';
+import type { Market, MarketKind, Order, OrderSide, OrderStatus, OrderType, Trade } from './trading.types';
 
 @Injectable()
 export class TradingRepository {
@@ -84,6 +84,14 @@ export class TradingRepository {
     return r.rows[0] ?? null;
   }
 
+  async getOrderByClientId(userId: string, marketId: string, clientId: string, c?: PoolClient): Promise<Order | null> {
+    const r = await this.c(c).query<Order>(
+      'SELECT * FROM trading.orders WHERE user_id = $1 AND market_id = $2 AND client_id = $3 LIMIT 1',
+      [userId, marketId, clientId],
+    );
+    return r.rows[0] ?? null;
+  }
+
   async listUserOrders(userId: string, opts: { marketId?: string; status?: OrderStatus; side?: OrderSide; type?: OrderType; limit?: number; offset?: number } = {}): Promise<Order[]> {
     const params: unknown[] = [userId];
     const where: string[] = ['user_id = $1'];
@@ -103,12 +111,61 @@ export class TradingRepository {
   async insertTrade(input: Omit<Trade, 'created_at'>, c?: PoolClient): Promise<Trade> {
     const r = await this.c(c).query<Trade>(
       `INSERT INTO trading.trades
-        (id, market_id, buy_order_id, sell_order_id, buyer_id, seller_id, price_minor, amount_minor, fee_buyer_minor, fee_seller_minor)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::bigint, $8::bigint, $9::bigint, $10::bigint) RETURNING *`,
+        (id, market_id, buy_order_id, sell_order_id, buyer_id, seller_id, price_minor, amount_minor, fee_buyer_minor, fee_seller_minor,
+         settlement_status, settlement_next_attempt_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::bigint, $8::bigint, $9::bigint, $10::bigint, 'pending', now()) RETURNING *`,
       [input.id, input.market_id, input.buy_order_id, input.sell_order_id, input.buyer_id, input.seller_id,
        input.price_minor, input.amount_minor, input.fee_buyer_minor, input.fee_seller_minor],
     );
     return r.rows[0];
+  }
+
+  async claimTradeSettlement(limit = 20): Promise<Trade[]> {
+    return this.db.withTransaction(async (tx) => {
+      const r = await tx.query<Trade>(
+        `WITH candidates AS (
+           SELECT id FROM trading.trades
+           WHERE ((settlement_status IN ('pending','failed') AND settlement_next_attempt_at <= now())
+              OR (settlement_status = 'processing' AND settlement_processing_started_at < now() - interval '5 minutes'))
+           ORDER BY created_at ASC
+           FOR UPDATE SKIP LOCKED LIMIT $1
+         )
+         UPDATE trading.trades t
+         SET settlement_status = 'processing', settlement_attempts = t.settlement_attempts + 1,
+             settlement_processing_started_at = now()
+         FROM candidates c WHERE t.id = c.id RETURNING t.*`,
+        [limit],
+      );
+      return r.rows;
+    });
+  }
+
+  async beginTradeSettlement(tradeId: string): Promise<boolean> {
+    const r = await this.db.query(
+      `UPDATE trading.trades SET settlement_status = 'processing', settlement_attempts = settlement_attempts + 1,
+          settlement_processing_started_at = now()
+       WHERE id = $1 AND settlement_status IN ('pending','failed') RETURNING id`,
+      [tradeId],
+    );
+    return r.rows.length > 0;
+  }
+
+  async markTradeSettlementSucceeded(tradeId: string, txId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE trading.trades SET settlement_status = 'succeeded', settlement_tx_id = $2, settled_at = now(), settlement_processing_started_at = NULL, settlement_last_error = NULL
+       WHERE id = $1 AND settlement_status = 'processing'`,
+      [tradeId, txId],
+    );
+  }
+
+  async markTradeSettlementFailed(tradeId: string, error: string, maxBackoffSeconds = 300): Promise<void> {
+    await this.db.query(
+      `UPDATE trading.trades
+       SET settlement_status = 'failed', settlement_processing_started_at = NULL, settlement_last_error = left($2, 2000),
+           settlement_next_attempt_at = now() + LEAST(make_interval(secs => GREATEST(5, power(2::numeric, LEAST(settlement_attempts, 8))::int)), make_interval(secs => $3))
+       WHERE id = $1 AND settlement_status = 'processing'`,
+      [tradeId, error, maxBackoffSeconds],
+    );
   }
 
   async listTrades(marketId: string, opts: { limit?: number; since?: Date } = {}): Promise<Trade[]> {

@@ -1,7 +1,12 @@
+'use client';
+
 import Link from 'next/link';
+
 import { Github, Twitter, Send } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 export function SiteFooter() {
+  const { t } = useI18n();
   return (
     <footer className="border-t border-border/40 bg-background mt-12">
       <div className="container py-12">
@@ -11,10 +16,10 @@ export function SiteFooter() {
               <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground">
                 ﷼
               </div>
-              Rial
+              {t('brand')}
             </div>
             <p className="text-sm text-muted-foreground max-w-xs">
-              Production-grade token launch & trading platform with deep liquidity and on-chain transparency.
+              {t('footerDescription')}
             </p>
             <div className="flex gap-2 mt-4">
               <Link href="https://github.com" className="text-muted-foreground hover:text-foreground transition" aria-label="GitHub">
@@ -29,28 +34,28 @@ export function SiteFooter() {
             </div>
           </div>
 
-          <FooterColumn title="Product" links={[
-            { href: '/trade', label: 'Trade' },
-            { href: '/launchpad', label: 'Launchpad' },
-            { href: '/portfolio', label: 'Portfolio' },
-            { href: '/docs', label: 'Docs' },
+          <FooterColumn title={t('product')} links={[
+            { href: '/trade', label: t('trade') },
+            { href: '/launchpad', label: t('launchpad') },
+            { href: '/portfolio', label: t('portfolio') },
+            { href: '/docs', label: t('docs') },
           ]} />
-          <FooterColumn title="Developers" links={[
-            { href: '/docs/api', label: 'API Reference' },
+          <FooterColumn title={t('developers')} links={[
+            { href: '/docs/api', label: t('apiReference') },
             { href: '/docs/grpc', label: 'gRPC' },
             { href: '/docs/graphql', label: 'GraphQL' },
             { href: '/docs/websocket', label: 'WebSocket' },
           ]} />
-          <FooterColumn title="Company" links={[
-            { href: '/about', label: 'About' },
-            { href: '/legal/terms', label: 'Terms' },
-            { href: '/legal/privacy', label: 'Privacy' },
-            { href: '/legal/risks', label: 'Risk Disclosure' },
+          <FooterColumn title={t('company')} links={[
+            { href: '/about', label: t('about') },
+            { href: '/legal/terms', label: t('terms') },
+            { href: '/legal/privacy', label: t('privacy') },
+            { href: '/legal/risks', label: t('riskDisclosure') },
           ]} />
         </div>
         <div className="mt-12 pt-6 border-t flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-          <p>© {new Date().getFullYear()} Rial. All rights reserved.</p>
-          <p>Trading digital assets carries risk. Past performance ≠ future results.</p>
+          <p>© {new Date().getFullYear()} Rial. {t('rights')}</p>
+          <p>{t('riskNotice')}</p>
         </div>
       </div>
     </footer>

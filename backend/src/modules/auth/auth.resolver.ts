@@ -6,7 +6,6 @@ import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { Public } from '../../common/guards/jwt-auth.guard';
 
 import { AuthService } from './auth.service';
-import { TokenPair } from './token.service';
 import { AuthenticatedUser, UserPublic } from './types';
 
 @Resolver(() => UserPublic)

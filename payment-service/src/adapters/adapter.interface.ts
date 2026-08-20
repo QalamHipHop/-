@@ -37,6 +37,12 @@ export interface AdapterCancelResult {
   reason?: string;
 }
 
+export interface AdapterRefundResult {
+  externalId: string;
+  status: 'processing' | 'succeeded' | 'failed';
+  failureReason?: string;
+}
+
 export interface AdapterInfo {
   name: string;
   enabled: boolean;
@@ -50,6 +56,7 @@ export interface PaymentAdapter {
   createIntent(input: CreateIntentInput): Promise<AdapterIntentResult>;
   verify(externalId: string): Promise<AdapterVerifyResult>;
   cancel(externalId: string, reason?: string): Promise<AdapterCancelResult>;
+  refund?(externalId: string, amount: Money, reason: string, idempotencyKey: string): Promise<AdapterRefundResult>;
   verifyWebhookSignature(rawBody: Buffer, headers: Record<string, string>, signature: string): boolean;
   parseWebhook(rawBody: Buffer, headers: Record<string, string>, signature: string): Promise<AdapterVerifyResult>;
 }

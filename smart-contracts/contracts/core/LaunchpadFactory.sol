@@ -54,6 +54,10 @@ contract LaunchpadFactory is ILaunchpad, AccessControl, Pausable {
     error MaxFee();
     error UnknownToken();
     error UnknownPool();
+    error UnauthorizedTokenMint();
+    error FactoryZeroAddress();
+    error InvalidSupply();
+    error InvalidGraduationThreshold();
 
     constructor(
         address admin,
@@ -65,6 +69,7 @@ contract LaunchpadFactory is ILaunchpad, AccessControl, Pausable {
         uint256 _creatorFeeBps
     ) {
         if (_platformFeeBps + _creatorFeeBps > 1000) revert MaxFee(); // hard cap 10%
+        if (admin == address(0) || _rial == address(0) || _treasury == address(0) || _router == address(0) || _vesting == address(0)) revert FactoryZeroAddress();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(CREATOR_ROLE, admin);
         _grantRole(PAUSER_ROLE, admin);
@@ -88,6 +93,8 @@ contract LaunchpadFactory is ILaunchpad, AccessControl, Pausable {
         uint256 graduationThreshold
     ) external whenNotPaused returns (address pool, address tokenAddr) {
         if (platformFeeBps + creatorFeeBps > 1000) revert MaxFee();
+        if (totalSupply == 0) revert InvalidSupply();
+        if (graduationThreshold == 0) revert InvalidGraduationThreshold();
         // Deploy a minimal ERC-20 for the new token. Each launch gets its own
         // mintable token; mint authority is renounced after graduation to
         // protect holders.
@@ -138,6 +145,11 @@ contract LaunchpadFactory is ILaunchpad, AccessControl, Pausable {
         if (pool == address(0)) revert UnknownToken();
         IERC20(rial).safeTransferFrom(msg.sender, pool, rialIn);
         tokensOut = LaunchPool(pool).buy(msg.sender, rialIn, minTokensOut);
+        if (LaunchPool(pool).state() == State.GRADUATED && infoOf[pool].state != State.GRADUATED) {
+            infoOf[pool].state = State.GRADUATED;
+            infoOf[pool].graduatedAt = uint64(block.timestamp);
+            emit Graduated(token, LaunchPool(pool).ammPair(), LaunchPool(pool).liquiditySeeded());
+        }
     }
 
     function sell(address token, uint256 tokensIn, uint256 minRialOut)
@@ -147,6 +159,8 @@ contract LaunchpadFactory is ILaunchpad, AccessControl, Pausable {
     {
         address pool = poolOf[token];
         if (pool == address(0)) revert UnknownToken();
+        // Pull exactly once using the allowance granted to this factory, then
+        // let the pool account for the already-deposited token balance.
         IERC20(token).safeTransferFrom(msg.sender, pool, tokensIn);
         rialOut = LaunchPool(pool).sell(msg.sender, tokensIn, minRialOut);
     }
@@ -199,6 +213,18 @@ contract LaunchpadFactory is ILaunchpad, AccessControl, Pausable {
         return LaunchPool(pool).quoteSell(tokensOut);
     }
 
+    function mintLaunchToken(address token, address to, uint256 amount) external {
+        address pool = poolOf[token];
+        if (pool == address(0) || msg.sender != pool) revert UnauthorizedTokenMint();
+        LaunchToken(token).mint(to, amount);
+    }
+
+    function renounceLaunchToken(address token) external {
+        address pool = poolOf[token];
+        if (pool == address(0) || msg.sender != pool) revert UnauthorizedTokenMint();
+        LaunchToken(token).renounceMint();
+    }
+
     function withdrawFees(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         IERC20(rial).safeTransfer(to, amount);
         emit FeesWithdrawn(to, amount);
@@ -227,6 +253,8 @@ contract LaunchPool is Pausable {
     uint256 public creatorFeeBps;
     uint256 public reserveBalance;
     uint256 public soldSupply;
+    address public ammPair;
+    uint256 public liquiditySeeded;
     ILaunchpad.State public state;
 
     error NotLive();
@@ -286,8 +314,8 @@ contract LaunchPool is Pausable {
         if (creatorFee  > 0) IERC20(rial).safeTransfer(creator,   creatorFee);
         reserveBalance += netRial;
         soldSupply     += tokensOut;
-        // Mint tokens to buyer.
-        LaunchToken(token).mint(buyer, tokensOut);
+        // Factory is the token minter; the pool requests minting through its factory.
+        LaunchpadFactory(factory).mintLaunchToken(token, buyer, tokensOut);
         // Auto-graduate if threshold met.
         if (reserveBalance >= graduationThreshold) {
             _graduate();
@@ -301,26 +329,31 @@ contract LaunchPool is Pausable {
         if (rialOut > reserveBalance) revert BelowThreshold();
         reserveBalance -= rialOut;
         soldSupply     -= tokensIn;
-        IERC20(token).safeTransferFrom(seller, address(this), tokensIn);
+        // The factory has already transferred tokens into this pool exactly
+        // once; do not call transferFrom again with the pool as spender.
         IERC20(rial).safeTransfer(seller, rialOut);
     }
 
-    function graduate() external onlyFactory returns (address ammPair, uint256 liquiditySeeded) {
+    function graduate() external onlyFactory returns (address pair, uint256 seeded) {
         if (state == ILaunchpad.State.GRADUATED) revert AlreadyGraduated();
         return _graduate();
     }
 
-    function _graduate() internal returns (address ammPair, uint256 liquiditySeeded) {
+    function _graduate() internal returns (address pair, uint256 seeded) {
+        if (reserveBalance < graduationThreshold) revert BelowThreshold();
         state = ILaunchpad.State.GRADUATED;
-        // Seed AMM pair: token ↔ rial with current reserve + remaining supply.
-        uint256 tokenLiquidity = LaunchToken(token).totalSupply() - soldSupply;
-        ammPair = address(new RialAMM(token, rial));
-        // Transfer rial + token to the pair, then mint LP.
-        IERC20(rial).safeTransfer(ammPair, reserveBalance);
-        LaunchToken(token).mint(ammPair, tokenLiquidity);
-        liquiditySeeded = RialAMM(ammPair).mint(treasury);
+        LaunchToken launchToken = LaunchToken(token);
+        uint256 remainingMint = launchToken.maxSupply() - launchToken.totalSupply();
+        pair = address(new RialAMM(token, rial));
+        IERC20(rial).safeTransfer(pair, reserveBalance);
+        if (remainingMint > 0) LaunchpadFactory(factory).mintLaunchToken(token, pair, remainingMint);
+        uint256 tokenLiquidity = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(pair, tokenLiquidity);
+        seeded = RialAMM(pair).mint(treasury);
+        ammPair = pair;
+        liquiditySeeded = seeded;
         // Renounce mint authority to lock the supply.
-        LaunchToken(token).renounceMint();
+        LaunchpadFactory(factory).renounceLaunchToken(token);
     }
 
     function quoteBuy(uint256 rialIn) external view returns (uint256) {
@@ -352,10 +385,12 @@ contract LaunchPool is Pausable {
 
 contract LaunchToken is ERC20 {
     address public immutable minter;
+    uint256 public immutable maxSupply;
     bool    public mintRenounced;
 
     error MintRenounced();
     error NotMinter();
+    error SupplyCapExceeded();
 
     modifier onlyMinter() {
         if (msg.sender != minter) revert NotMinter();
@@ -366,6 +401,7 @@ contract LaunchToken is ERC20 {
         ERC20(name_, symbol_)
     {
         minter = msg.sender; // factory is the deployer
+        maxSupply = totalSupply_;
         // Mint the entire supply to the pool by pre-mint to creator; in v1 we
         // mint-on-demand from the pool instead. Leave totalSupply_ as cap.
         totalSupply_; // silence
@@ -374,6 +410,7 @@ contract LaunchToken is ERC20 {
 
     function mint(address to, uint256 amount) external onlyMinter {
         if (mintRenounced) revert MintRenounced();
+        if (totalSupply() + amount > maxSupply) revert SupplyCapExceeded();
         _mint(to, amount);
     }
 

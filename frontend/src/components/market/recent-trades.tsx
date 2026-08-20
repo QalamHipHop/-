@@ -5,6 +5,7 @@ import { getWsClient } from '@/lib/ws';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 export interface Trade {
   id: string;
@@ -20,6 +21,7 @@ interface RecentTradesProps {
 }
 
 export function RecentTrades({ symbol, initial = [] }: RecentTradesProps) {
+  const { t, locale } = useI18n();
   const [trades, setTrades] = useState<Trade[]>(initial);
   const [loading, setLoading] = useState(initial.length === 0);
 
@@ -45,12 +47,12 @@ export function RecentTrades({ symbol, initial = [] }: RecentTradesProps) {
   return (
     <div className="rounded-md border bg-card text-sm font-mono">
       <div className="grid grid-cols-3 px-3 py-2 text-[10px] uppercase text-muted-foreground border-b">
-        <div>Price</div>
-        <div className="text-right">Size</div>
-        <div className="text-right">Time</div>
+        <div>{t('price')}</div>
+        <div className="text-right">{t('size')}</div>
+        <div className="text-right">{t('time')}</div>
       </div>
       <div className="px-3 py-1 max-h-[400px] overflow-y-auto">
-        {trades.length === 0 && <div className="text-center text-muted-foreground py-6 text-xs">No trades yet</div>}
+        {trades.length === 0 && <div className="text-center text-muted-foreground py-6 text-xs">{t('noTrades')}</div>}
         {trades.map((t) => (
           <div key={t.id} className="grid grid-cols-3 py-0.5 text-xs">
             <span className={cn(t.side === 'buy' ? 'text-success' : 'text-destructive')}>
@@ -58,7 +60,7 @@ export function RecentTrades({ symbol, initial = [] }: RecentTradesProps) {
             </span>
             <span className="text-right">{formatNumber(t.size, { maximumFractionDigits: 2 })}</span>
             <span className="text-right text-muted-foreground">
-              {new Date(t.ts).toLocaleTimeString('en-US', { hour12: false })}
+              {new Date(t.ts).toLocaleTimeString(locale === 'fa' ? 'fa-IR' : 'en-US', { hour12: false })}
             </span>
           </div>
         ))}

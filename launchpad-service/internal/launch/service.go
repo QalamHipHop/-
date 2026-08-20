@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -81,6 +82,9 @@ type VestingInput struct {
 }
 
 func (s *Service) Create(ctx context.Context, creatorID uuid.UUID, in CreateTokenInput) (*domain.Token, error) {
+	if s.isPlatformPaused(ctx) {
+		return nil, errors.New("LAUNCHPAD_PAUSED: launchpad is temporarily paused")
+	}
 	if err := s.validateCreateInput(in); err != nil {
 		return nil, err
 	}
@@ -108,7 +112,12 @@ func (s *Service) Create(ctx context.Context, creatorID uuid.UUID, in CreateToke
 			Website: in.Website, Telegram: in.Telegram, Twitter: in.Twitter, LogoURL: in.LogoURL,
 		})
 		if err != nil {
-			s.log.Warn("risk ai failed, continuing", zap.Error(err))
+			if s.cfg.Launchpad.RiskFailClosed || strings.EqualFold(s.cfg.Env, "production") {
+				return nil, fmt.Errorf("RISK_UNAVAILABLE: token risk gate failed: %w", err)
+			}
+			s.log.Warn("risk ai failed in non-production; policy allows continuation", zap.Error(err))
+		} else if rs == nil || math.IsNaN(rs.Score) || math.IsInf(rs.Score, 0) || rs.Score < 0 || rs.Score > 1 {
+			return nil, errors.New("RISK_INVALID: token risk response is invalid")
 		} else if rs.Score > 0.85 {
 			return nil, fmt.Errorf("RISK_REJECTED: token failed AI risk gate (score=%.2f)", rs.Score)
 		}
@@ -196,6 +205,9 @@ func (s *Service) List(ctx context.Context, status string, limit, offset int) ([
 // ---- buy / sell ----
 
 func (s *Service) QuoteBuy(ctx context.Context, tokenID uuid.UUID, rialInMinor int64) (*domain.BuyQuote, error) {
+	if s.isPlatformPaused(ctx) {
+		return nil, errors.New("LAUNCHPAD_PAUSED: launchpad is temporarily paused")
+	}
 	tk, st, err := s.tokenAndState(ctx, tokenID)
 	if err != nil {
 		return nil, err
@@ -224,6 +236,9 @@ func (s *Service) QuoteBuy(ctx context.Context, tokenID uuid.UUID, rialInMinor i
 }
 
 func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMinor int64, clientID string) (*domain.BuyResult, error) {
+	if s.isPlatformPaused(ctx) {
+		return nil, errors.New("LAUNCHPAD_PAUSED: launchpad is temporarily paused")
+	}
 	if strings.TrimSpace(clientID) == "" {
 		return nil, errors.New("CLIENT_ID_REQUIRED")
 	}
@@ -240,9 +255,20 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 		// we keep it simple: rely on trading service for client-side dedup
 	}
 
-	// AI sanity check on buyer
+	// AI sanity check on buyer. In production, a missing or malformed risk
+	// decision is a hard deny; silently ignoring it would be fail-open.
 	if s.cfg.Launchpad.RiskAIEnabled {
-		_, _ = s.risk.ScoreUser(ctx, userID.String())
+		rs, riskErr := s.risk.ScoreUser(ctx, userID.String())
+		if riskErr != nil {
+			if s.cfg.Launchpad.RiskFailClosed || strings.EqualFold(s.cfg.Env, "production") {
+				return nil, fmt.Errorf("RISK_UNAVAILABLE: buyer risk gate failed: %w", riskErr)
+			}
+			s.log.Warn("buyer risk check failed in non-production", zap.Error(riskErr))
+		} else if rs == nil || math.IsNaN(rs.Score) || math.IsInf(rs.Score, 0) || rs.Score < 0 || rs.Score > 1 {
+			return nil, errors.New("RISK_INVALID: buyer risk response is invalid")
+		} else if rs.Score > 0.85 {
+			return nil, fmt.Errorf("RISK_REJECTED: buyer failed risk gate (score=%.2f)", rs.Score)
+		}
 	}
 
 	model := curve.Model(tk.CurveModel)
@@ -358,6 +384,9 @@ func (s *Service) Buy(ctx context.Context, userID, tokenID uuid.UUID, rialInMino
 }
 
 func (s *Service) Sell(ctx context.Context, userID, tokenID uuid.UUID, tokensInMinor int64, clientID string) (*domain.BuyResult, error) {
+	if s.isPlatformPaused(ctx) {
+		return nil, errors.New("LAUNCHPAD_PAUSED: launchpad is temporarily paused")
+	}
 	if strings.TrimSpace(clientID) == "" {
 		return nil, errors.New("CLIENT_ID_REQUIRED")
 	}
@@ -496,6 +525,15 @@ func (s *Service) tokenAndState(ctx context.Context, id uuid.UUID) (*domain.Toke
 		return nil, nil, err
 	}
 	return t, bs, nil
+}
+
+func (s *Service) isPlatformPaused(ctx context.Context) bool {
+	var paused bool
+	if err := s.pg.Pool.QueryRow(ctx, `SELECT COALESCE((value = 'true'::jsonb), false) FROM operations.platform_settings WHERE key = 'launchpad_paused'`).Scan(&paused); err != nil {
+		s.log.Warn("platform pause lookup failed", zap.Error(err))
+		return strings.EqualFold(s.cfg.Env, "production")
+	}
+	return paused
 }
 
 func (s *Service) validateCreateInput(in CreateTokenInput) error {

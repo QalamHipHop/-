@@ -1,6 +1,7 @@
 package curve
 
 import (
+	"math"
 	"testing"
 )
 
@@ -39,6 +40,49 @@ func TestValidateUnknownModel(t *testing.T) {
 	e := NewEngine(nil)
 	if err := e.Validate(Model("weird"), DefaultParams()); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestFeeForUsesExactIntegerArithmetic(t *testing.T) {
+	got, err := feeFor(9_007_199_254_740_000, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 90_071_992_547_400 {
+		t.Fatalf("unexpected fee: %d", got)
+	}
+	if _, err := feeFor(math.MaxInt64, 9_999); err == nil {
+		t.Fatal("expected fee multiplication overflow")
+	}
+}
+
+func TestValidateRejectsUnsafeModelParameters(t *testing.T) {
+	engine := NewEngine(nil)
+	params := DefaultParams()
+	params.BasePriceMinor = 0
+	if err := engine.Validate(ModelLinear, params); err == nil {
+		t.Fatal("expected non-positive base price rejection")
+	}
+	params = DefaultParams()
+	params.Stiffness = 0
+	if err := engine.Validate(ModelSigmoid, params); err == nil {
+		t.Fatal("expected zero sigmoid stiffness rejection")
+	}
+	params = DefaultParams()
+	params.FeeBps = 10_000
+	if err := engine.Validate(ModelLinear, params); err == nil {
+		t.Fatal("expected fee consuming all input rejection")
+	}
+}
+
+func TestQuoteBuyRejectsCapacityOverflow(t *testing.T) {
+	engine := NewEngine(nil)
+	params := DefaultParams()
+	params.SupplyMaxMinor = 1
+	params.BasePriceMinor = 1
+	state := &State{Params: params}
+	if _, _, _, _, err := engine.QuoteBuy(state, ModelLinear, 1_000_000_000); err == nil {
+		t.Fatal("expected insufficient capacity")
 	}
 }
 

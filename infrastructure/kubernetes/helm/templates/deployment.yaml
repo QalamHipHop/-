@@ -24,11 +24,11 @@ spec:
           envFrom:
             - secretRef: { name: rial-env }
           readinessProbe:
-            httpGet: { path: /readyz, port: 8080 }
+            httpGet: { path: /v1/readyz, port: 8080 }
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /healthz, port: 8080 }
+            httpGet: { path: /v1/healthz, port: 8080 }
             initialDelaySeconds: 30
             periodSeconds: 30
           resources: {{- toYaml .Values.resources | nindent 12 }}

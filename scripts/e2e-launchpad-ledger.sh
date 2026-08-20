@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
+# RIAL internal-ledger launchpad integration verification.
+# Requires a running isolated staging stack and never targets external chains.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-API="http://localhost:50054"
-WALLET="http://localhost:50053"
+API="${LAUNCHPAD_E2E_API:-http://localhost:50054}"
+WALLET="${WALLET_E2E_API:-http://localhost:50053}"
+if [[ ! -f "$ROOT_DIR/.env" ]]; then
+  echo "RIAL E2E requires an isolated staging .env; copy .env.example and configure real internal credentials first." >&2
+  exit 2
+fi
 WALLET_INTERNAL_TOKEN="$(sed -n 's/^WALLET_INTERNAL_TOKEN=//p' "$ROOT_DIR/.env" | tail -n1)"
 if [[ -z "$WALLET_INTERNAL_TOKEN" ]]; then
   echo "WALLET_INTERNAL_TOKEN is required in .env for E2E verification" >&2
@@ -26,8 +32,6 @@ if [[ ! "$ADMIN_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
 fi
 
 RUN_ID="$(date -u +%Y%m%d%H%M%S)"
-# A fresh UUID keeps repeated integration runs independent of the per-creator
-# launchpad policy; approval still uses the seeded admin actor above.
 TEST_USER_ID="${E2E_USER_ID:-$(cat /proc/sys/kernel/random/uuid)}"
 SYMBOL="Q$(date -u +%s | tail -c 7)"
 ARTIFACT_DIR="/tmp/qalam-e2e-${RUN_ID}"
@@ -36,16 +40,16 @@ mkdir -p "$ARTIFACT_DIR"
 curl -fsS "$API/healthz" >"$ARTIFACT_DIR/launchpad-health.json"
 curl -fsS "$WALLET/readyz" >"$ARTIFACT_DIR/wallet-ready.json"
 
-# This is a development-ledger credit, performed through the real wallet API.
-# It is deliberately recorded as a testnet integration reference and not treated as fiat settlement.
+# This is a staging-ledger credit performed through the real wallet API.
+# It exercises the internal Rial ledger and is never treated as external fiat settlement.
 wallet_curl -X POST "$WALLET/v1/credit" \
   -H 'Content-Type: application/json' \
-  -d "{\"user_id\":\"$TEST_USER_ID\",\"amount\":500000000,\"type\":\"deposit\",\"reference\":\"devnet-integration-$RUN_ID\",\"idempotency_key\":\"credit-$RUN_ID\",\"metadata\":{\"environment\":\"development\",\"purpose\":\"launchpad-ledger-verification\"}}" \
+  -d "{\"user_id\":\"$TEST_USER_ID\",\"amount\":500000000,\"type\":\"deposit\",\"reference\":\"rial-internal-staging-$RUN_ID\",\"idempotency_key\":\"credit-$RUN_ID\",\"metadata\":{\"environment\":\"staging\",\"purpose\":\"launchpad-ledger-verification\"}}" \
   >"$ARTIFACT_DIR/wallet-credit.json"
 
 launchpad_curl -X POST "$API/api/v1/tokens" \
   -H 'Content-Type: application/json' \
-  -d "{\"name\":\"Qalam Ledger Verification $RUN_ID\",\"symbol\":\"$SYMBOL\",\"decimals\":8,\"total_supply\":\"100000000000000000\",\"chain\":\"solana-devnet\",\"contract_address\":\"pending-testnet-mint-$RUN_ID\",\"description\":\"Development integration verification for Qalamhiphop wallet-settled launch flow.\",\"curve_model\":\"sigmoid\",\"graduation_rial_minor\":69000000000}" \
+  -d "{\"name\":\"Qalam Ledger Verification $RUN_ID\",\"symbol\":\"$SYMBOL\",\"decimals\":8,\"total_supply\":\"100000000000000000\",\"chain\":\"rial-internal\",\"contract_address\":\"rial-internal-token-$RUN_ID\",\"description\":\"Staging integration verification for Qalamhiphop wallet-settled internal Rial launch flow.\",\"curve_model\":\"sigmoid\",\"graduation_rial_minor\":69000000000}" \
   >"$ARTIFACT_DIR/token-created.json"
 
 TOKEN_ID="$(grep -oE '"id":"[0-9a-fA-F-]{36}"' "$ARTIFACT_DIR/token-created.json" | head -n1 | cut -d'"' -f4)"

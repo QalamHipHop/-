@@ -10,38 +10,40 @@ import (
 )
 
 type Config struct {
-	AppVersion  string
-	Env         string
-	HTTPAddr    string
-	GRPCAddr    string
+	AppVersion   string
+	Env          string
+	HTTPAddr     string
+	GRPCAddr     string
 	OTELEndpoint string
 	// InternalToken authenticates trusted platform services to the wallet HTTP API.
 	// It is deliberately required in every environment; no development default exists.
 	InternalToken string
 
-	Postgres PostgresConfig
-	Redis    RedisConfig
-	NATS     NATSConfig
-	Kafka    KafkaConfig
-	Custody  CustodyConfig
+	Postgres   PostgresConfig
+	Redis      RedisConfig
+	NATS       NATSConfig
+	Kafka      KafkaConfig
+	Custody    CustodyConfig
 	Settlement SettlementConfig
 }
 
 type PostgresConfig struct {
-	Host     string
-	Port     int
-	DB       string
-	User     string
-	Password string
-	Schema   string
-	PoolMax  int
-	SSL      bool
+	Host        string
+	Port        int
+	DB          string
+	User        string
+	Password    string
+	Schema      string
+	PoolMax     int
+	SSL         bool
 	StmtTimeout time.Duration
 }
 
 func (p PostgresConfig) DSN() string {
 	ssl := "disable"
-	if p.SSL { ssl = "require" }
+	if p.SSL {
+		ssl = "require"
+	}
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s&search_path=%s,shared&statement_timeout=%d&application_name=rial-wallet-service",
 		p.User, p.Password, p.Host, p.Port, p.DB, ssl, p.Schema, p.StmtTimeout.Milliseconds())
 }
@@ -77,10 +79,12 @@ type CustodyConfig struct {
 }
 
 type SettlementConfig struct {
-	Symbol         string
-	Decimals       int
-	ReserveAccount string
-	TreasuryAccount string
+	Symbol                      string
+	Decimals                    int
+	ReserveAccount              string
+	TreasuryAccount             string
+	WithdrawalWhitelistRequired bool
+	AllowedSignerIDs            []string
 }
 
 func Load() (*Config, error) {
@@ -91,65 +95,73 @@ func Load() (*Config, error) {
 	setDefaults(v)
 
 	cfg := &Config{
-		AppVersion: v.GetString("app_version"),
-		Env:        v.GetString("env"),
-		HTTPAddr:   v.GetString("http_addr"),
-		GRPCAddr:   v.GetString("grpc_addr"),
-		OTELEndpoint: v.GetString("otel_endpoint"),
+		AppVersion:    v.GetString("app_version"),
+		Env:           v.GetString("env"),
+		HTTPAddr:      v.GetString("http_addr"),
+		GRPCAddr:      v.GetString("grpc_addr"),
+		OTELEndpoint:  v.GetString("otel_endpoint"),
 		InternalToken: v.GetString("internal_token"),
 		Postgres: PostgresConfig{
-			Host: v.GetString("postgres.host"),
-			Port: v.GetInt("postgres.port"),
-			DB:   v.GetString("postgres.db"),
-			User: v.GetString("postgres.user"),
-			Password: v.GetString("postgres.password"),
-			Schema: v.GetString("postgres.schema"),
-			PoolMax: v.GetInt("postgres.pool_max"),
-			SSL: v.GetBool("postgres.ssl"),
+			Host:        v.GetString("postgres.host"),
+			Port:        v.GetInt("postgres.port"),
+			DB:          v.GetString("postgres.db"),
+			User:        v.GetString("postgres.user"),
+			Password:    v.GetString("postgres.password"),
+			Schema:      v.GetString("postgres.schema"),
+			PoolMax:     v.GetInt("postgres.pool_max"),
+			SSL:         v.GetBool("postgres.ssl"),
 			StmtTimeout: time.Duration(v.GetInt("postgres.stmt_timeout_ms")) * time.Millisecond,
 		},
 		Redis: RedisConfig{
-			Addr: v.GetString("redis.addr"),
+			Addr:     v.GetString("redis.addr"),
 			Password: v.GetString("redis.password"),
-			DB: v.GetInt("redis.db"),
-			Prefix: v.GetString("redis.prefix"),
-			TLS: v.GetBool("redis.tls"),
+			DB:       v.GetInt("redis.db"),
+			Prefix:   v.GetString("redis.prefix"),
+			TLS:      v.GetBool("redis.tls"),
 		},
 		NATS: NATSConfig{
 			Servers: splitCsv(v.GetString("nats.servers")),
-			Stream: v.GetString("nats.stream"),
-			Token: v.GetString("nats.token"),
-			User: v.GetString("nats.user"),
-			Pass: v.GetString("nats.pass"),
+			Stream:  v.GetString("nats.stream"),
+			Token:   v.GetString("nats.token"),
+			User:    v.GetString("nats.user"),
+			Pass:    v.GetString("nats.pass"),
 		},
 		Kafka: KafkaConfig{
-			Brokers: splitCsv(v.GetString("kafka.brokers")),
+			Brokers:    splitCsv(v.GetString("kafka.brokers")),
 			AuditTopic: v.GetString("kafka.audit_topic"),
 		},
 		Custody: CustodyConfig{
-			Mode: v.GetString("custody.mode"),
-			VaultAddr: v.GetString("custody.vault_addr"),
-			VaultToken: v.GetString("custody.vault_token"),
-			AWSRegion: v.GetString("custody.aws_region"),
-			AWSKeyID: v.GetString("custody.aws_key_id"),
+			Mode:           v.GetString("custody.mode"),
+			VaultAddr:      v.GetString("custody.vault_addr"),
+			VaultToken:     v.GetString("custody.vault_token"),
+			AWSRegion:      v.GetString("custody.aws_region"),
+			AWSKeyID:       v.GetString("custody.aws_key_id"),
 			HotWalletLimit: v.GetString("custody.hot_wallet_limit"),
 		},
 		Settlement: SettlementConfig{
-			Symbol: v.GetString("settlement.symbol"),
-			Decimals: v.GetInt("settlement.decimals"),
-			ReserveAccount: v.GetString("settlement.reserve_account"),
-			TreasuryAccount: v.GetString("settlement.treasury_account"),
+			Symbol:                      v.GetString("settlement.symbol"),
+			Decimals:                    v.GetInt("settlement.decimals"),
+			ReserveAccount:              v.GetString("settlement.reserve_account"),
+			TreasuryAccount:             v.GetString("settlement.treasury_account"),
+			WithdrawalWhitelistRequired: v.GetBool("withdrawal_whitelist_required"),
+			AllowedSignerIDs:            splitCsv(v.GetString("withdrawal_allowed_signer_ids")),
 		},
 	}
 
-	if cfg.Postgres.Password == "" && cfg.Env == "production" {
-		return nil, fmt.Errorf("RIAL_WALLET_POSTGRES_PASSWORD is required in production")
+	if cfg.Env == "production" && (strings.TrimSpace(cfg.Postgres.Password) == "" || cfg.Postgres.Password == "rial") {
+		return nil, fmt.Errorf("RIAL_WALLET_POSTGRES_PASSWORD must be a non-default secret in production")
 	}
 	if strings.TrimSpace(cfg.InternalToken) == "" {
 		return nil, fmt.Errorf("RIAL_WALLET_INTERNAL_TOKEN is required")
 	}
 	if cfg.Env == "production" && len(cfg.InternalToken) < 32 {
 		return nil, fmt.Errorf("RIAL_WALLET_INTERNAL_TOKEN must be at least 32 characters in production")
+	}
+	if cfg.Env == "production" && (cfg.Custody.Mode == "" || cfg.Custody.Mode == "memory" || cfg.Custody.Mode == "dev" || cfg.Custody.Mode == "development" || cfg.Custody.Mode == "test") {
+		return nil, fmt.Errorf("RIAL_WALLET_CUSTODY_MODE must select a durable production custody adapter")
+	}
+	if cfg.Env == "production" && len(cfg.Settlement.AllowedSignerIDs) == 0 {
+		return nil, fmt.Errorf("RIAL_WALLET_WITHDRAWAL_ALLOWED_SIGNER_IDS is required in production")
 	}
 	return cfg, nil
 }
@@ -161,6 +173,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("grpc_addr", ":9091")
 	v.SetDefault("otel_endpoint", "")
 	v.SetDefault("internal_token", "")
+	v.SetDefault("withdrawal_whitelist_required", false)
+	v.SetDefault("withdrawal_allowed_signer_ids", "")
 
 	v.SetDefault("postgres.host", "localhost")
 	v.SetDefault("postgres.port", 5432)
@@ -201,12 +215,16 @@ func setDefaults(v *viper.Viper) {
 }
 
 func splitCsv(s string) []string {
-	if s == "" { return nil }
+	if s == "" {
+		return nil
+	}
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if p != "" { out = append(out, p) }
+		if p != "" {
+			out = append(out, p)
+		}
 	}
 	return out
 }

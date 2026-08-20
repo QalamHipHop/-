@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Rocket, TrendingUp, LineChart, Wallet, Shield, LogOut, User, Settings } from 'lucide-react';
+import { Rocket, TrendingUp, Wallet, Shield, LogOut, User, Settings, Languages, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -16,23 +16,25 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 const NAV = [
-  { href: '/trade', label: 'Trade', icon: TrendingUp },
-  { href: '/launchpad', label: 'Launchpad', icon: Rocket },
-  { href: '/portfolio', label: 'Portfolio', icon: Wallet, auth: true },
-  { href: '/admin', label: 'Admin', icon: Shield, auth: true, roles: ['admin', 'moderator'] as const },
+  { href: '/trade', key: 'trade' as const, icon: TrendingUp },
+  { href: '/launchpad', key: 'launchpad' as const, icon: Rocket },
+  { href: '/portfolio', key: 'portfolio' as const, icon: Wallet, auth: true },
+  { href: '/admin', key: 'admin' as const, icon: Shield, auth: true, roles: ['admin', 'moderator'] as const },
 ];
 
 export function SiteHeader() {
   const pathname = usePathname();
   const { user, logout, hasRole, loading } = useAuth();
+  const { locale, setLocale, t } = useI18n();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-md">
+    <header className="glass sticky top-0 z-50 w-full border-x-0 border-t-0">
       <div className="container flex h-16 items-center gap-4">
         <Link href="/" className="flex items-center gap-2 font-bold text-lg">
-          <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground">
+          <div className="glass-strong h-7 w-7 rounded-md bg-primary/90 flex items-center justify-center text-primary-foreground">
             ﷼
           </div>
           <span>Rial</span>
@@ -47,19 +49,36 @@ export function SiteHeader() {
                 key={item.href}
                 href={item.href as any}
                 className={cn(
-                  'inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                  active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                  'glass-interactive inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  active ? 'glass-strong text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                 )}
               >
-                <Icon className="h-4 w-4" /> {item.label}
+                  <Icon className="h-4 w-4" /> {t(item.key)}
               </Link>
             );
           })}
         </nav>
 
+        <div className="md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="glass-interactive h-9 w-9" aria-label="Navigation menu">
+                <Menu className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              {NAV.filter((item) => !item.auth || user).map((item) => {
+                const Icon = item.icon;
+                return <DropdownMenuItem key={item.href} asChild><Link href={item.href as any}><Icon className="mr-2 h-4 w-4" />{t(item.key)}</Link></DropdownMenuItem>;
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
         <div className="flex-1" />
 
         <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="glass-interactive h-9 w-9" onClick={() => setLocale(locale === 'fa' ? 'en' : 'fa')} aria-label={t('language')} title={locale === 'fa' ? t('english') : t('persian')}><Languages className="h-4 w-4" /></Button>
           <ThemeToggle />
           {loading ? (
             <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
@@ -82,29 +101,29 @@ export function SiteHeader() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/portfolio"><User className="mr-2 h-4 w-4" /> Portfolio</Link>
+                  <Link href="/portfolio"><User className="mr-2 h-4 w-4" /> {t('portfolio')}</Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/settings"><Settings className="mr-2 h-4 w-4" /> Settings</Link>
+                  <Link href="/settings"><Settings className="mr-2 h-4 w-4" /> {t('settings')}</Link>
                 </DropdownMenuItem>
                 {hasRole('admin', 'moderator') && (
                   <DropdownMenuItem asChild>
-                    <Link href="/admin"><Shield className="mr-2 h-4 w-4" /> Admin</Link>
+                    <Link href="/admin"><Shield className="mr-2 h-4 w-4" /> {t('admin')}</Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
-                  <LogOut className="mr-2 h-4 w-4" /> Log out
+                  <LogOut className="mr-2 h-4 w-4" /> {t('logout')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
             <>
               <Button asChild variant="ghost" size="sm">
-                <Link href="/login">Log in</Link>
+                <Link href="/login">{t('login')}</Link>
               </Button>
               <Button asChild size="sm">
-                <Link href="/register">Sign up</Link>
+                <Link href="/register">{t('signup')}</Link>
               </Button>
             </>
           )}

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Flame, Search, Sparkles, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { timeAgo } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 interface LaunchpadToken {
   id: string;
@@ -38,6 +39,7 @@ function extractTokens(payload: TokenListResponse): LaunchpadToken[] {
 export default function LaunchpadPage() {
   const [tab, setTab] = useState('new');
   const [q, setQ] = useState('');
+  const { t } = useI18n();
   const tokensQuery = useQuery({
     queryKey: ['launchpad-tokens'],
     queryFn: () => api.get<TokenListResponse>('/api/launchpad/tokens', { query: { limit: 100 } }),
@@ -61,12 +63,12 @@ export default function LaunchpadPage() {
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Flame className="h-7 w-7 text-orange-500" /> Launchpad
+            <Flame className="h-7 w-7 text-orange-500" /> {t('launchpad')}
           </h1>
-          <p className="text-muted-foreground">Discover tokens recorded by the live launchpad service. Market metrics appear only after real market data exists.</p>
+          <p className="text-muted-foreground">{t('launchpadDescription')}</p>
         </div>
         <Button asChild size="lg">
-          <Link href="/launchpad/new"><Sparkles className="mr-2 h-4 w-4" /> Launch a token</Link>
+          <Link href="/launchpad/new"><Sparkles className="mr-2 h-4 w-4" /> {t('launchTokenTitle')}</Link>
         </Button>
       </div>
 
@@ -74,13 +76,13 @@ export default function LaunchpadPage() {
         <CardContent className="p-4 flex flex-col md:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search by name or symbol…" value={q} onChange={(event) => setQ(event.target.value)} className="pl-9" />
+            <Input placeholder={t('searchTokens')} value={q} onChange={(event) => setQ(event.target.value)} className="pl-9" />
           </div>
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
-              <TabsTrigger value="new"><Clock className="mr-1 h-3.5 w-3.5" /> New</TabsTrigger>
-              <TabsTrigger value="live">Live</TabsTrigger>
-              <TabsTrigger value="graduated">Graduated</TabsTrigger>
+              <TabsTrigger value="new"><Clock className="mr-1 h-3.5 w-3.5" /> {t('newTokens')}</TabsTrigger>
+              <TabsTrigger value="live">{t('live')}</TabsTrigger>
+              <TabsTrigger value="graduated">{t('graduated')}</TabsTrigger>
             </TabsList>
           </Tabs>
         </CardContent>
@@ -89,15 +91,15 @@ export default function LaunchpadPage() {
       <Tabs value={tab} onValueChange={setTab} className="w-full">
         <TabsContent value={tab} className="mt-0">
           {tokensQuery.isLoading ? (
-            <div className="text-center py-12 text-muted-foreground">Loading live launchpad records…</div>
+            <div className="text-center py-12 text-muted-foreground">{t('loadingLaunchpad')}</div>
           ) : tokensQuery.isError ? (
-            <div className="text-center py-12 text-destructive">Launchpad records are temporarily unavailable. No synthetic data is displayed.</div>
+            <div className="text-center py-12 text-destructive">{t('launchpadUnavailable')}</div>
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {filtered.map((token) => <TokenCard key={token.id} token={token} />)}
               </div>
-              {filtered.length === 0 && <div className="text-center py-12 text-muted-foreground">No real launchpad records match your filters.</div>}
+              {filtered.length === 0 && <div className="text-center py-12 text-muted-foreground">{t('noLaunchpadMatches')}</div>}
             </>
           )}
         </TabsContent>
@@ -107,8 +109,10 @@ export default function LaunchpadPage() {
 }
 
 function TokenCard({ token }: { token: LaunchpadToken }) {
-  const status = token.graduated || token.status === 'graduated' ? 'Graduated' : token.status === 'live' ? 'Bonding' : token.status;
-  const variant = status === 'Graduated' ? 'success' : status === 'Bonding' ? 'info' : 'warning';
+  const { t } = useI18n();
+  const statusKey = token.graduated || token.status === 'graduated' ? 'graduated' : token.status === 'live' ? 'bonding' : 'other';
+  const status = statusKey === 'graduated' ? t('graduatedStatus') : statusKey === 'bonding' ? t('bonding') : token.status;
+  const variant = statusKey === 'graduated' ? 'success' : statusKey === 'bonding' ? 'info' : 'warning';
 
   return (
     <Link href={`/launchpad/${token.id}`}>
@@ -125,11 +129,11 @@ function TokenCard({ token }: { token: LaunchpadToken }) {
               </div>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-2">{token.description || 'No description was provided by the token creator.'}</p>
+          <p className="text-xs text-muted-foreground line-clamp-2">{token.description || t('noDescription')}</p>
           <div className="grid grid-cols-3 gap-2 text-xs">
-            <Stat label="Chain" value={token.chain} />
-            <Stat label="Supply" value={token.total_supply} />
-            <Stat label="Age" value={timeAgo(token.created_at)} />
+            <Stat label={t('chain')} value={token.chain} />
+            <Stat label={t('supply')} value={token.total_supply} />
+            <Stat label={t('age')} value={timeAgo(token.created_at)} />
           </div>
         </CardContent>
       </Card>

@@ -30,14 +30,12 @@ function buildUrl(path: string, query?: ApiRequestInit['query']) {
 
 export async function apiFetch<T = unknown>(path: string, init: ApiRequestInit = {}): Promise<T> {
   const { body, query, headers, raw, ...rest } = init;
-  const token = typeof window !== 'undefined' ? localStorage.getItem('rial_token') : null;
   const isJson = body && typeof body === 'object' && !(body instanceof FormData);
 
   const res = await fetch(buildUrl(path, query), {
     ...rest,
     headers: {
       ...(isJson ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       Accept: 'application/json',
       ...headers,
     },

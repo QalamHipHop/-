@@ -188,6 +188,20 @@ services:
       redis:    { condition: service_healthy }
     environment:
       NODE_ENV: ${NODE_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+      JWT_ALG: ${JWT_ALG:-HS256}
+      JWT_ISSUER: ${JWT_ISSUER:-rial-platform}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-rial-api}
+      CSRF_SECRET: ${CSRF_SECRET:-change-me}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-rial_session}
+      REFRESH_COOKIE_NAME: ${REFRESH_COOKIE_NAME:-rial_refresh}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-lax}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -202,6 +216,13 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: rial-backend
       LAUNCHPAD_INTERNAL_TOKEN: ${LAUNCHPAD_INTERNAL_TOKEN:?LAUNCHPAD_INTERNAL_TOKEN is required}
+      WALLET_SERVICE_URL: ${WALLET_SERVICE_URL:-http://wallet-service:50053}
+      WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?WALLET_INTERNAL_TOKEN is required}
+      PAYMENT_SERVICE_URL: ${PAYMENT_SERVICE_URL:-http://payment-service:50055}
+      PAYMENT_INTERNAL_TOKEN: ${PAYMENT_INTERNAL_TOKEN:?PAYMENT_INTERNAL_TOKEN is required}
+      LAUNCHPAD_SERVICE_URL: ${LAUNCHPAD_SERVICE_URL:-http://launchpad-service:50054}
+      RIAL_LEDGER_AUTHORITY: ${RIAL_LEDGER_AUTHORITY:-wallet-service}
+      MATCHING_ENABLED: ${MATCHING_ENABLED:-true}
     ports: ["8080:8080"]
 
   frontend:
@@ -239,6 +260,12 @@ services:
       RIAL_WALLET_NATS_SERVERS: nats://nats:4222
       RIAL_WALLET_KAFKA_BROKERS: kafka:9092
       RIAL_WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?WALLET_INTERNAL_TOKEN is required}
+      RIAL_WALLET_CUSTODY_MODE: ${WALLET_CUSTODY_MODE:-memory}
+      RIAL_WALLET_CUSTODY_VAULT_ADDR: ${VAULT_ADDR:-}
+      RIAL_WALLET_CUSTODY_VAULT_TOKEN: ${VAULT_TOKEN:-}
+      RIAL_WALLET_CUSTODY_VAULT_KEY_ID: ${VAULT_KEY_ID:-rial-withdrawal}
+      RIAL_WALLET_WITHDRAWAL_WHITELIST_REQUIRED: ${WITHDRAWAL_WHITELIST_REQUIRED:-true}
+      RIAL_WALLET_WITHDRAWAL_ALLOWED_SIGNER_IDS: ${WITHDRAWAL_ALLOWED_SIGNER_IDS:-}
     ports: ["50053:50053", "50059:50059"]
 
   launchpad-service:
@@ -256,6 +283,8 @@ services:
       LAUNCHPAD_AI_ENGINE_URL: http://ai-engine:50058
       LAUNCHPAD_WALLET_BASE_URL: http://wallet-service:50053
       LAUNCHPAD_WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?WALLET_INTERNAL_TOKEN is required}
+      LAUNCHPAD_RISK_FAIL_CLOSED: ${LAUNCHPAD_RISK_FAIL_CLOSED:-true}
+      LAUNCHPAD_PAUSED: ${LAUNCHPAD_PAUSED:-false}
     ports: ["50054:50054"]
 
   payment-service:
@@ -264,7 +293,19 @@ services:
     depends_on: [postgres, redis]
     environment:
       PAYMENT_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NODE_ENV: ${NODE_ENV:-development}
       PAYMENT_INTERNAL_TOKEN: ${PAYMENT_INTERNAL_TOKEN:?PAYMENT_INTERNAL_TOKEN is required}
+      PAYMENT_WALLET_BASE_URL: ${PAYMENT_WALLET_BASE_URL:-http://wallet-service:50053}
+      WALLET_INTERNAL_TOKEN: ${WALLET_INTERNAL_TOKEN:?WALLET_INTERNAL_TOKEN is required}
+      PAYMENT_DEFAULT_ADAPTER: ${PAYMENT_DEFAULT_ADAPTER:-zarinpal}
+      PAYMENT_DEFAULT_FIAT: ${PAYMENT_DEFAULT_FIAT:-IRR}
+      PAYMENT_CORS_ORIGINS: ${PAYMENT_CORS_ORIGINS:-http://localhost:3000}
+      ZARINPAL_ENABLED: ${ZARINPAL_ENABLED:-false}
+      ZARINPAL_SANDBOX: ${ZARINPAL_SANDBOX:-true}
+      ZARINPAL_MERCHANT_ID: ${ZARINPAL_MERCHANT_ID:-}
+      ZARINPAL_CALLBACK_URL: ${ZARINPAL_CALLBACK_URL:-}
+      MANUAL_PAYMENT_ENABLED: ${MANUAL_PAYMENT_ENABLED:-true}
+      PAYMENT_SETTLEMENT_RECOVERY_INTERVAL_MS: ${PAYMENT_SETTLEMENT_RECOVERY_INTERVAL_MS:-30000}
     ports: ["50055:50055"]
 
   notification-service:
@@ -322,14 +363,14 @@ services:
     profiles: ["tools"]
     working_dir: /app
     volumes: [".:/app"]
-    command: ["sh","-c","echo 'run tests here'"]
+    command: ["sh","-c","corepack enable && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test"]
 
   lint:
     image: node:20-alpine
     profiles: ["tools"]
     working_dir: /app
     volumes: [".:/app"]
-    command: ["sh","-c","echo 'lint here'"]
+    command: ["sh","-c","corepack enable && pnpm install --frozen-lockfile && pnpm exec turbo run lint"]
 
 volumes:
   pgdata: {}

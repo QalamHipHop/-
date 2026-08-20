@@ -11,6 +11,9 @@ import { EventsModule } from '../events/events.module';
 import { WalletService } from './wallet.service';
 import { WalletRepository } from './wallet.repository';
 import { WalletController } from './wallet.controller';
+import { PaymentClient } from './payment.client';
+import { CustodyClient } from './custody.client';
+import { RialLedgerClient } from './rial-ledger.client';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Module({
@@ -33,6 +36,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
   providers: [
     WalletService,
     WalletRepository,
+    PaymentClient,
+    CustodyClient,
+    RialLedgerClient,
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
   exports: [WalletService, WalletRepository],

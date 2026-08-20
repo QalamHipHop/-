@@ -6,6 +6,7 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
@@ -182,11 +183,25 @@ async def score_image(req: ImageModerationRequest) -> ScoreResponse:
         raise HTTPException(status_code=400, detail="base64 or url required")
     sig = await image_moderation(payload)
     REQUEST_LATENCY.labels(endpoint="image").observe(time.perf_counter() - t0)
+    status = sig.get("status", "unavailable")
+    if status == "invalid":
+        raise HTTPException(status_code=400, detail={"code": "IMAGE_MODERATION_INPUT_INVALID", "evidence": sig.get("evidence", {})})
+    if status != "ready" or sig.get("score") is None:
+        # Missing model is a safety dependency outage, not a clean result.
+        return JSONResponse(status_code=503, content={
+            "target": "image",
+            "kind": "image",
+            "status": "unavailable",
+            "flagged": True,
+            "score": None,
+            "evidence": sig.get("evidence", {}),
+        })
+    score = float(sig["score"])
     return ScoreResponse(
         target="image",
         kind="image",
-        score=sig["score"],
-        flagged=sig["score"] >= 0.5,
+        score=score,
+        flagged=score >= 0.5,
         evidence=sig["evidence"],
     )
 

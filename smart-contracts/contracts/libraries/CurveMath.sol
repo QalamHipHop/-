@@ -51,8 +51,16 @@ library CurveMath {
             return p.a.wadMul(_lnWad(inner));
         }
         if (p.model == Model.SIGMOID) {
-            uint256 exponent = p.k.wadMul(S > p.S0 ? S - p.S0 : p.S0 - S);
-            uint256 denom = FixedPointMath.WAD + (S >= p.S0 ? _expWad(exponent) : _expWad(exponent));
+            uint256 distance = p.k.wadMul(S > p.S0 ? S - p.S0 : p.S0 - S);
+            uint256 logistic;
+            if (S < p.S0) {
+                // Below midpoint: e^(-k(S-S0)) = e^(k(S0-S)).
+                logistic = _expWad(distance);
+            } else {
+                // Above midpoint: e^(-k(S-S0)) = 1 / e^(k(S-S0)).
+                logistic = FixedPointMath.wadDiv(FixedPointMath.WAD, _expWad(distance));
+            }
+            uint256 denom = FixedPointMath.WAD + logistic;
             if (denom == 0) revert InsufficientLiquidity();
             return FixedPointMath.wadDiv(p.L, denom);
         }

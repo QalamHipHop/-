@@ -10,7 +10,7 @@ use tonic::transport::Server;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-use trading_engine::config::{AppConfig, LoggingCfg};
+use trading_engine::config::AppConfig;
 use trading_engine::health::{serve as serve_health, HealthState};
 use trading_engine::metrics::Metrics;
 use trading_engine::proto::rial::trading::v1::trading_engine_server::TradingEngineServer;

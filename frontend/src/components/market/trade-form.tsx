@@ -9,37 +9,35 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast-provider';
 import { api } from '@/lib/api';
-import { cn, formatNumber, formatPercent } from '@/lib/utils';
+import { cn, formatNumber } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 interface TradeFormProps {
   symbol: string;
   side: 'buy' | 'sell';
   onSideChange?: (s: 'buy' | 'sell') => void;
-  marketPrice: number;
+  marketPrice: number | null;
 }
 
 type OrderType = 'market' | 'limit';
 
 export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeFormProps) {
   const { toast } = useToast();
+  const { t } = useI18n();
   const [orderType, setOrderType] = React.useState<OrderType>('limit');
-  const [price, setPrice] = React.useState<string>(marketPrice.toFixed(4));
+  const [price, setPrice] = React.useState<string>(marketPrice && marketPrice > 0 ? marketPrice.toFixed(4) : '');
   const [amount, setAmount] = React.useState<string>('');
   const [pct, setPct] = React.useState<number | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
-  const { data: balance } = useQuery({
+  const { data: balance, isError: balanceUnavailable } = useQuery({
     queryKey: ['balance', side === 'buy' ? 'rial' : symbol],
-    queryFn: async () => {
-      try {
-        return await api.get<{ available: number; currency: string }>(`/api/wallet/balance`, { query: { asset: side === 'buy' ? 'RIAL' : symbol } });
-      } catch {
-        return { available: side === 'buy' ? 5000 : 10000, currency: side === 'buy' ? 'RIAL' : symbol };
-      }
-    },
+    queryFn: () => api.get<{ available: number; currency: string }>(`/api/wallet/balance`, { query: { asset: side === 'buy' ? 'RIAL' : symbol } }),
   });
 
-  React.useEffect(() => setPrice(marketPrice.toFixed(marketPrice < 0.01 ? 6 : 4)), [marketPrice]);
+  React.useEffect(() => {
+    setPrice(marketPrice && marketPrice > 0 ? marketPrice.toFixed(marketPrice < 0.01 ? 6 : 4) : '');
+  }, [marketPrice]);
 
   const total = (parseFloat(price || '0') * parseFloat(amount || '0')) || 0;
 
@@ -54,12 +52,16 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
   };
 
   const submit = async () => {
+    if (!balance || balanceUnavailable) {
+      toast({ variant: 'destructive', title: t('balanceUnavailable'), description: t('liveDataUnavailable') });
+      return;
+    }
     if (!amount || parseFloat(amount) <= 0) {
-      toast({ variant: 'destructive', title: 'Invalid amount', description: 'Enter a positive amount.' });
+      toast({ variant: 'destructive', title: t('invalidAmount'), description: t('positiveAmount') });
       return;
     }
     if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) {
-      toast({ variant: 'destructive', title: 'Invalid price', description: 'Enter a positive price.' });
+      toast({ variant: 'destructive', title: t('invalidPrice'), description: t('positivePrice') });
       return;
     }
     setSubmitting(true);
@@ -71,12 +73,12 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
         price: orderType === 'market' ? null : parseFloat(price),
         amount: parseFloat(amount),
       });
-      toast({ variant: 'success', title: 'Order placed', description: `${side.toUpperCase()} ${amount} ${symbol}` });
+      toast({ variant: 'success', title: t('orderPlaced'), description: `${side === 'buy' ? t('buy') : t('sell')} ${amount} ${symbol}` });
       setAmount('');
       setPct(null);
     } catch (err) {
       const message = (err as { body?: { message?: string } })?.body?.message || 'Order failed';
-      toast({ variant: 'destructive', title: 'Order failed', description: message });
+      toast({ variant: 'destructive', title: t('orderFailed'), description: message });
     } finally {
       setSubmitting(false);
     }
@@ -91,13 +93,13 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
               value="buy"
               className="data-[state=active]:bg-success data-[state=active]:text-success-foreground"
             >
-              Buy
+              {t('buy')}
             </TabsTrigger>
             <TabsTrigger
               value="sell"
               className="data-[state=active]:bg-destructive data-[state=active]:text-destructive-foreground"
             >
-              Sell
+              {t('sell')}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -105,14 +107,14 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
       <CardContent className="p-4 space-y-4">
         <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)}>
           <TabsList className="grid grid-cols-2 w-full">
-            <TabsTrigger value="limit">Limit</TabsTrigger>
-            <TabsTrigger value="market">Market</TabsTrigger>
+            <TabsTrigger value="limit">{t('limit')}</TabsTrigger>
+            <TabsTrigger value="market">{t('market')}</TabsTrigger>
           </TabsList>
         </Tabs>
 
         {orderType === 'limit' && (
           <div className="space-y-2">
-            <Label htmlFor="price">Price</Label>
+            <Label htmlFor="price">{t('price')}</Label>
             <div className="relative">
               <Input
                 id="price"
@@ -121,13 +123,13 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
                 onChange={(e) => setPrice(e.target.value)}
                 className="pr-12 font-mono"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">USD</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">RIAL</span>
             </div>
           </div>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="amount">Amount</Label>
+          <Label htmlFor="amount">{t('amount')}</Label>
           <div className="relative">
             <Input
               id="amount"
@@ -157,18 +159,18 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
         </div>
 
         <div className="space-y-1 text-xs">
-          <Row label="Total" value={`$${formatNumber(total, { maximumFractionDigits: 2 })}`} />
-          <Row label="Available" value={`${formatNumber(balance?.available || 0, { maximumFractionDigits: 4 })} ${balance?.currency || ''}`} />
-          <Row label="Slippage" value="0.5%" />
-          <Row label="Fee" value={`$${formatNumber(total * 0.001, { maximumFractionDigits: 2 })} (0.1%)`} />
+          <Row label={t('total')} value={`${formatNumber(total, { maximumFractionDigits: 2 })} ﷼`} />
+          <Row label={t('available')} value={balance ? `${formatNumber(balance.available, { maximumFractionDigits: 4 })} ${balance.currency}` : t('unavailable')} />
+          <Row label={t('slippage')} value="Engine-enforced" />
+          <Row label={t('fee')} value="Engine-calculated" />
         </div>
 
         <Button
           onClick={submit}
-          disabled={submitting}
+          disabled={submitting || !balance || balanceUnavailable}
           className={cn('w-full', side === 'buy' ? 'bg-success hover:bg-success/90' : 'bg-destructive hover:bg-destructive/90')}
         >
-          {submitting ? 'Submitting…' : `${side === 'buy' ? 'Buy' : 'Sell'} ${symbol}`}
+          {submitting ? t('submitting') : `${side === 'buy' ? t('buy') : t('sell')} ${symbol}`}
         </Button>
       </CardContent>
     </Card>

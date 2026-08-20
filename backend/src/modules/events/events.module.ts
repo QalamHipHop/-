@@ -6,9 +6,10 @@
 import { Module } from '@nestjs/common';
 import { EventBusService } from './event-bus.service';
 import { AuditSinkService } from './audit-sink.service';
+import { OutboxWorker } from './outbox.worker';
 
 @Module({
-  providers: [EventBusService, AuditSinkService],
+  providers: [EventBusService, AuditSinkService, OutboxWorker],
   exports: [EventBusService, AuditSinkService],
 })
 export class EventsModule {}

@@ -37,8 +37,8 @@ export const KAFKA_PRODUCER = 'KAFKA_PRODUCER';
     },
     {
       provide: KAFKA_PRODUCER,
-      inject: [KAFKA_CLIENT, ConfigService],
-      useFactory: async (kafka: Kafka, config: ConfigService): Promise<Producer> => {
+      inject: [KAFKA_CLIENT],
+      useFactory: async (kafka: Kafka): Promise<Producer> => {
         const producer = kafka.producer({
           allowAutoTopicCreation: false,
           idempotent: true,

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"go.uber.org/zap"
@@ -82,15 +83,34 @@ func (e *Engine) Validate(m Model, p Params) error {
 	if p.VirtualRial < 0 || p.RealRial < 0 {
 		return errors.New("curve: reserves must be >= 0")
 	}
-	if p.FeeBps < 0 || p.FeeBps > 10_000 {
-		return errors.New("curve: fee_bps out of range")
+	if p.FeeBps < 0 || p.FeeBps >= 10_000 {
+		return errors.New("curve: fee_bps must be between 0 and 9999")
+	}
+	if !finitePositive(p.BasePriceMinor) {
+		return errors.New("curve: base_price_minor must be finite and > 0")
 	}
 	switch m {
-	case ModelLinear, ModelExponential, ModelLogarithmic, ModelSigmoid:
-		return nil
+	case ModelLinear:
+		if !finiteNonNegative(p.Slope) {
+			return errors.New("curve: linear slope must be finite and >= 0")
+		}
+	case ModelExponential:
+		if !finiteNonNegative(p.GrowthRate) {
+			return errors.New("curve: exponential growth_rate must be finite and >= 0")
+		}
+	case ModelLogarithmic:
+		// Base-price validation above is sufficient; log curve is monotonic for xx >= 0.
+	case ModelSigmoid:
+		if !finitePositive(p.Stiffness) {
+			return errors.New("curve: sigmoid stiffness must be finite and > 0")
+		}
+		if !finite(p.Midpoint) || p.Midpoint < 0 || p.Midpoint > 1 {
+			return errors.New("curve: sigmoid midpoint must be in [0,1]")
+		}
 	default:
 		return fmt.Errorf("curve: unknown model %q", m)
 	}
+	return nil
 }
 
 func ParseModel(s string) (Model, error) {
@@ -105,10 +125,17 @@ func ParseModel(s string) (Model, error) {
 // SpotPriceFor returns price in Rial-minor per token-minor at a given supply.
 // The model is explicit because State carries reserves and parameters only.
 func (s *State) SpotPriceFor(m Model, supplyMinor int64) (float64, error) {
-	if supplyMinor < 0 {
-		return 0, errors.New("curve: negative supply")
+	if supplyMinor < 0 || supplyMinor > s.Params.SupplyMaxMinor {
+		return 0, errors.New("curve: supply outside [0,supply_max]")
 	}
-	return spotAt(s, m, supplyMinor)
+	if err := (&Engine{}).Validate(m, s.Params); err != nil {
+		return 0, err
+	}
+	price, err := spotAt(s, m, supplyMinor)
+	if err != nil || !finitePositive(price) {
+		return 0, errors.New("curve: spot price is not finite and positive")
+	}
+	return price, nil
 }
 
 // --- helper math ---
@@ -131,14 +158,31 @@ func (e *Engine) QuoteBuy(s *State, m Model, rialInMinor int64) (tokensOut int64
 		err = errors.New("curve: amount must be > 0")
 		return
 	}
-	fee := int64(float64(rialInMinor) * float64(s.Params.FeeBps) / 10_000)
+	fee, ferr := feeFor(rialInMinor, s.Params.FeeBps)
+	if ferr != nil {
+		err = ferr
+		return
+	}
 	effective := rialInMinor - fee
 
+	if effective <= 0 {
+		err = errors.New("curve: fee consumes input")
+		return
+	}
+	capacity, ierr := integrate(s, m, s.SupplyMinor, s.Params.SupplyMaxMinor)
+	if ierr != nil || !finiteNonNegative(capacity) || capacity < float64(effective) {
+		err = errors.New("curve: insufficient curve capacity")
+		return
+	}
 	// binary search for supply that satisfies ∫(s→s+Δ) p(x) dx = effective
 	lo, hi := s.SupplyMinor, s.Params.SupplyMaxMinor
 	for it := 0; it < 80; it++ {
 		mid := lo + (hi-lo)/2
-		area, _ := integrate(s, m, s.SupplyMinor, mid)
+		area, ierr := integrate(s, m, s.SupplyMinor, mid)
+		if ierr != nil || !finiteNonNegative(area) {
+			err = errors.New("curve: invalid integration result")
+			return
+		}
 		if area < float64(effective) {
 			lo = mid
 		} else {
@@ -155,6 +199,10 @@ func (e *Engine) QuoteBuy(s *State, m Model, rialInMinor int64) (tokensOut int64
 	}
 	newSupply = s.SupplyMinor + tokensOut
 	// Only net input backs future redemptions. The fee is settled to treasury.
+	if effective > math.MaxInt64-s.ReserveMinor {
+		err = errors.New("curve: reserve overflow")
+		return
+	}
 	newReserve = s.ReserveMinor + effective
 	feeMinor = fee
 	return
@@ -173,13 +221,25 @@ func (e *Engine) QuoteSell(s *State, m Model, tokensInMinor int64) (rialOutMinor
 		err = errors.New("curve: insufficient supply")
 		return
 	}
-	area, _ := integrate(s, m, s.SupplyMinor-tokensInMinor, s.SupplyMinor)
-	grossRialOut := int64(area)
-	fee := int64(float64(grossRialOut) * float64(s.Params.FeeBps) / 10_000)
+	area, ierr := integrate(s, m, s.SupplyMinor-tokensInMinor, s.SupplyMinor)
+	if ierr != nil || !finiteNonNegative(area) || area > float64(math.MaxInt64) {
+		err = errors.New("curve: invalid sell integration result")
+		return
+	}
+	grossRialOut := int64(math.Floor(area))
+	fee, ferr := feeFor(grossRialOut, s.Params.FeeBps)
+	if ferr != nil {
+		err = ferr
+		return
+	}
 	rialOutMinor = grossRialOut - fee
 	newSupply = s.SupplyMinor - tokensInMinor
 	// The full curve area exits reserve: net proceeds go to seller and fee goes
 	// to treasury. Leaving fee in reserve makes it redeemable twice.
+	if grossRialOut > s.ReserveMinor {
+		err = errors.New("curve: insufficient reserve")
+		return
+	}
 	newReserve = s.ReserveMinor - grossRialOut
 	if newReserve < 0 {
 		err = errors.New("curve: insufficient reserve")
@@ -211,6 +271,23 @@ func integrate(s *State, m Model, a, b int64) (float64, error) {
 	// divide by 1e8 to get rial-minor
 	return total / 1e8, nil
 }
+
+func feeFor(amount int64, feeBps int) (int64, error) {
+	if amount < 0 || feeBps < 0 || feeBps >= 10_000 {
+		return 0, errors.New("curve: invalid fee input")
+	}
+	if feeBps == 0 || amount == 0 {
+		return 0, nil
+	}
+	if amount > math.MaxInt64/int64(feeBps) {
+		return 0, errors.New("curve: fee multiplication overflow")
+	}
+	return (amount * int64(feeBps)) / 10_000, nil
+}
+
+func finite(x float64) bool            { return !math.IsNaN(x) && !math.IsInf(x, 0) }
+func finitePositive(x float64) bool    { return finite(x) && x > 0 }
+func finiteNonNegative(x float64) bool { return finite(x) && x >= 0 }
 
 func spotAt(s *State, m Model, x int64) (float64, error) {
 	p := s.Params

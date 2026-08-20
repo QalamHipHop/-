@@ -8,6 +8,7 @@ change.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from src.features.wallet_features import sigmoid, wallet_features, text_features
@@ -91,8 +92,11 @@ def fraud_score(
     z = 0.0
     z += 0.40 * same_cp
     z += 0.50 if value > 1_000_000 else 0.0
+    # Fraud scores represent positive evidence, so no evidence must be 0.0,
+    # not sigmoid(0)=0.5 which is ambiguous at threshold boundaries.
+    score = 1.0 - math.exp(-max(z, 0.0))
     return {
-        "score": float(sigmoid(z)),
+        "score": float(min(score, 1.0)),
         "evidence": {
             "round_trips": same_cp,
             "value": value,

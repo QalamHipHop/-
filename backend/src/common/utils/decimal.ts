@@ -14,7 +14,6 @@ export function toMinorUnits(amount: string | number | bigint): bigint {
   const [intPart, fracPart = ''] = body.split('.');
   if (fracPart.length > Number(DECIMALS)) {
     // round half-up to keep precision
-    const extra = fracPart.length - Number(DECIMALS);
     const truncated = fracPart.slice(0, Number(DECIMALS));
     const next = fracPart[Number(DECIMALS)] ?? '0';
     let minor = BigInt(intPart) * ONE + BigInt(truncated.padEnd(Number(DECIMALS), '0') || '0');
@@ -22,7 +21,7 @@ export function toMinorUnits(amount: string | number | bigint): bigint {
     return neg ? -minor : minor;
   }
   const padded = (fracPart + '0'.repeat(Number(DECIMALS))).slice(0, Number(DECIMALS));
-  let minor = BigInt(intPart) * ONE + BigInt(padded || '0');
+  const minor = BigInt(intPart) * ONE + BigInt(padded || '0');
   return neg ? -minor : minor;
 }
 

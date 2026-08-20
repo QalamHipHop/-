@@ -11,7 +11,6 @@ import { SettlementController } from './settlement.controller';
 import { FixedRateProvider } from './providers/fixed.provider';
 import { ExternalRateProvider } from './providers/external.provider';
 import { FloatingRateProvider } from './providers/floating.provider';
-import { RateProvider } from './providers/rate-provider.interface';
 
 @Module({
   imports: [HttpModule],

@@ -1,5 +1,6 @@
-import { BadGatewayException, Injectable } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DbService } from '../../infrastructure/database/db.service';
 
 type Actor = {
   userId: string;
@@ -11,7 +12,7 @@ export class LaunchpadService {
   private readonly baseUrl: string;
   private readonly internalToken: string;
 
-  constructor(config: ConfigService) {
+  constructor(config: ConfigService, private readonly db: DbService) {
     this.baseUrl = (config.get<string>('launchpad.baseUrl') ?? process.env.LAUNCHPAD_SERVICE_URL ?? 'http://launchpad-service:50054').replace(/\/$/, '');
     this.internalToken = process.env.LAUNCHPAD_INTERNAL_TOKEN ?? '';
     if (!this.internalToken && process.env.NODE_ENV === 'production') {
@@ -32,18 +33,22 @@ export class LaunchpadService {
   }
 
   async createToken(actor: Actor, body: unknown) {
+    await this.assertLaunchpadOpen();
     return this.request('/api/v1/tokens', 'POST', body, actor);
   }
 
   async quoteBuy(actor: Actor, id: string, body: unknown) {
+    await this.assertLaunchpadOpen();
     return this.request(`/api/v1/tokens/${encodeURIComponent(id)}/quote-buy`, 'POST', body, actor);
   }
 
   async buy(actor: Actor, id: string, body: unknown) {
+    await this.assertLaunchpadOpen();
     return this.request(`/api/v1/tokens/${encodeURIComponent(id)}/buy`, 'POST', body, actor);
   }
 
   async sell(actor: Actor, id: string, body: unknown) {
+    await this.assertLaunchpadOpen();
     return this.request(`/api/v1/tokens/${encodeURIComponent(id)}/sell`, 'POST', body, actor);
   }
 
@@ -57,6 +62,17 @@ export class LaunchpadService {
 
   async pause(actor: Actor, id: string, body: unknown) {
     return this.request(`/api/v1/tokens/${encodeURIComponent(id)}/pause`, 'POST', body, actor);
+  }
+
+  private async assertLaunchpadOpen(): Promise<void> {
+    const result = await this.db.query<{ paused: boolean }>(
+      `SELECT COALESCE((value = 'true'::jsonb), false) AS paused
+         FROM operations.platform_settings
+        WHERE key = 'launchpad_paused'`,
+    );
+    if (result.rows[0]?.paused === true) {
+      throw new BadRequestException({ code: 'LAUNCHPAD_PAUSED', message: 'Launchpad is temporarily paused' });
+    }
   }
 
   private async request(path: string, method = 'GET', body?: unknown, actor?: Actor): Promise<unknown> {

@@ -9,49 +9,45 @@ rule_files:
 
 scrape_configs:
   - job_name: prometheus
-    static_configs: [{ targets: ["localhost:9090"] }]
+    static_configs:
+      - targets: ["localhost:9090"]
 
   - job_name: backend
     metrics_path: /metrics
-    static_configs: [{ targets: ["backend:8080"] }]
+    static_configs:
+      - targets: ["backend:8080"]
 
+  # The matching engine exposes gRPC on 50051, health on 8081 and
+  # Prometheus metrics on a separate HTTP listener at 9101.
   - job_name: matching-engine
-    static_configs: [{ targets: ["matching-engine:50051"] }]
     metrics_path: /metrics
+    static_configs:
+      - targets: ["matching-engine:9101"]
 
+  # Trading health and metrics share the configured health listener.
   - job_name: trading-engine
-    static_configs: [{ targets: ["trading-engine:50052"] }]
     metrics_path: /metrics
+    static_configs:
+      - targets: ["trading-engine:50082"]
 
   - job_name: wallet-service
-    static_configs: [{ targets: ["wallet-service:50053"] }]
     metrics_path: /metrics
+    static_configs:
+      - targets: ["wallet-service:50053"]
 
   - job_name: launchpad-service
-    static_configs: [{ targets: ["launchpad-service:50054"] }]
     metrics_path: /metrics
+    static_configs:
+      - targets: ["launchpad-service:50054"]
 
-  - job_name: payment-service
-    static_configs: [{ targets: ["payment-service:50055"] }]
-    metrics_path: /metrics
-
-  - job_name: notification-service
-    static_configs: [{ targets: ["notification-service:50056"] }]
-    metrics_path: /metrics
-
+  # Payment and notification currently expose liveness only. They are not
+  # scraped as metrics until a real exporter is implemented for each service.
   - job_name: analytics
-    static_configs: [{ targets: ["analytics:50057"] }]
     metrics_path: /metrics
+    static_configs:
+      - targets: ["analytics:50057"]
 
   - job_name: ai-engine
-    static_configs: [{ targets: ["ai-engine:50058"] }]
     metrics_path: /metrics
-
-  - job_name: postgres
-    static_configs: [{ targets: ["postgres-exporter:9187"] }]
-
-  - job_name: redis
-    static_configs: [{ targets: ["redis-exporter:9121"] }]
-
-  - job_name: nginx
-    static_configs: [{ targets: ["nginx-exporter:9113"] }]
+    static_configs:
+      - targets: ["ai-engine:50058"]

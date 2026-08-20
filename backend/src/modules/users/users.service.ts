@@ -47,7 +47,7 @@ export interface UserPreferences {
 const DEFAULT_PREFERENCES: UserPreferences = {
   language: 'en',
   theme: 'system',
-  fiat: 'USD',
+  fiat: 'IRR',
   notifications: { email: true, sms: false, push: true, telegram: false },
   privacy: { showPortfolio: true, showActivity: true },
 };

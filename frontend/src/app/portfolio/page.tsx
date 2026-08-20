@@ -1,15 +1,32 @@
 'use client';
 
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/components/auth/auth-provider';
 import { api } from '@/lib/api';
 import { formatNumber, formatPercent } from '@/lib/utils';
-import { Wallet, ArrowDownToLine, ArrowUpFromLine, History, TrendingUp, LogIn } from 'lucide-react';
+import { Wallet, ArrowDownToLine, ArrowUpFromLine, History, LogIn } from 'lucide-react';
+
+interface Order {
+  id: string;
+  marketId?: string;
+  market_id?: string;
+  side: 'buy' | 'sell';
+  type: string;
+  amountMinor?: string;
+  amount_minor?: string;
+  filledMinor?: string;
+  filled_minor?: string;
+  priceMinor?: string;
+  price_minor?: string;
+  status: string;
+  createdAt?: string;
+  created_at?: string;
+}
 
 interface Position {
   symbol: string;
@@ -21,37 +38,29 @@ interface Position {
   pnlPct: number;
 }
 
-const FALLBACK_POSITIONS: Position[] = [
-  { symbol: 'RIALS', name: 'Rial Index', amount: 1240, price: 0.4234, value: 524.9, pnl: 64.2, pnlPct: 13.9 },
-  { symbol: 'MOON', name: 'MoonShot', amount: 8400, price: 0.1245, value: 1045.8, pnl: 224.1, pnlPct: 27.3 },
-  { symbol: 'NEON', name: 'Neon Pulse', amount: 50, price: 1.872, value: 93.6, pnl: 8.3, pnlPct: 9.7 },
-  { symbol: 'BOLT', name: 'Lightning', amount: 1200, price: 0.0567, value: 68.0, pnl: -2.4, pnlPct: -3.4 },
-];
-
 export default function PortfolioPage() {
   const { user, loading } = useAuth();
-  const { data: positions, isLoading } = useQuery({
+  const { data: positions, isLoading, isError: positionsError } = useQuery({
     queryKey: ['positions'],
-    queryFn: async () => {
-      try {
-        return await api.get<Position[]>('/api/portfolio/positions');
-      } catch {
-        return FALLBACK_POSITIONS;
-      }
-    },
+    queryFn: () => api.get<Position[]>('/api/portfolio/positions'),
     enabled: !!user,
   });
 
-  const { data: balance } = useQuery({
+  const { data: balance, isError: balanceError } = useQuery({
     queryKey: ['rial-balance'],
-    queryFn: async () => {
-      try {
-        return await api.get<{ available: number; total: number }>('/api/wallet/balance', { query: { asset: 'RIAL' } });
-      } catch {
-        return { available: 5_000, total: 5_240 };
-      }
-    },
+    queryFn: () => api.get<{ available: number; total: number }>('/api/wallet/balance', { query: { asset: 'RIAL' } }),
     enabled: !!user,
+  });
+
+  const queryClient = useQueryClient();
+  const ordersQuery = useQuery({
+    queryKey: ['user-orders'],
+    queryFn: () => api.get<Order[]>('/api/trading/orders', { query: { limit: 50 } }),
+    enabled: !!user,
+  });
+  const cancelOrder = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/trading/orders/${encodeURIComponent(id)}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user-orders'] }),
   });
 
   if (loading) return <div className="container py-8"><Skeleton className="h-96" /></div>;
@@ -76,8 +85,8 @@ export default function PortfolioPage() {
           <p className="text-muted-foreground">Your holdings, orders, and history.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline"><ArrowDownToLine className="mr-2 h-4 w-4" /> Deposit</Button>
-          <Button variant="outline"><ArrowUpFromLine className="mr-2 h-4 w-4" /> Withdraw</Button>
+          <Button asChild variant="outline"><Link href="/portfolio/funding"><ArrowDownToLine className="mr-2 h-4 w-4" /> Deposit</Link></Button>
+          <Button asChild variant="outline"><Link href="/portfolio/funding"><ArrowUpFromLine className="mr-2 h-4 w-4" /> Withdraw</Link></Button>
         </div>
       </div>
 
@@ -85,16 +94,16 @@ export default function PortfolioPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-sm text-muted-foreground">Total balance</div>
-            <div className="text-3xl font-bold mt-1">${formatNumber(totalValue)}</div>
+            <div className="text-3xl font-bold mt-1">{formatNumber(totalValue)} RIAL</div>
             <div className={`text-xs mt-1 ${totalPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-              {totalPnl >= 0 ? '+' : ''}${formatNumber(Math.abs(totalPnl))} ({formatPercent((totalPnl / Math.max(1, totalValue - totalPnl)) * 100)})
+              {totalPnl >= 0 ? '+' : ''}{formatNumber(Math.abs(totalPnl))} RIAL ({formatPercent((totalPnl / Math.max(1, totalValue - totalPnl)) * 100)})
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5">
             <div className="text-sm text-muted-foreground">Available (﷼)</div>
-            <div className="text-3xl font-bold mt-1">{formatNumber(balance?.available || 0)}</div>
+            {balanceError ? <div className="text-sm text-destructive mt-2">Balance unavailable</div> : <div className="text-3xl font-bold mt-1">{formatNumber(balance?.available || 0)}</div>}
             <div className="text-xs text-muted-foreground mt-1">Settlement token</div>
           </CardContent>
         </Card>
@@ -114,21 +123,34 @@ export default function PortfolioPage() {
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="holdings" className="mt-3">
-          {isLoading ? <Skeleton className="h-64" /> : <Holdings positions={positions || []} />}
+          {isLoading ? <Skeleton className="h-64" /> : positionsError ? <Unavailable label="Portfolio positions are temporarily unavailable" /> : <Holdings positions={positions || []} />}
         </TabsContent>
         <TabsContent value="orders" className="mt-3">
-          <Card>
-            <CardContent className="p-6 text-center text-muted-foreground text-sm">No open orders.</CardContent>
-          </Card>
+          {ordersQuery.isLoading ? <Skeleton className="h-64" /> : ordersQuery.isError ? <Unavailable label="Open orders are temporarily unavailable" /> : <Orders orders={(ordersQuery.data || []).filter((order) => !['filled', 'cancelled', 'rejected'].includes(order.status))} onCancel={(id) => cancelOrder.mutate(id)} cancelling={cancelOrder.isPending} />}
         </TabsContent>
         <TabsContent value="history" className="mt-3">
-          <Card>
-            <CardContent className="p-6 text-center text-muted-foreground text-sm">No recent trades.</CardContent>
-          </Card>
+          {ordersQuery.isLoading ? <Skeleton className="h-64" /> : ordersQuery.isError ? <Unavailable label="Order history is temporarily unavailable" /> : <Orders orders={ordersQuery.data || []} onCancel={() => undefined} cancelling={false} history />}
         </TabsContent>
       </Tabs>
     </div>
   );
+}
+
+function Unavailable({ label }: { label: string }) {
+  return <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">{label}. No synthetic data is shown.</CardContent></Card>;
+}
+
+function Orders({ orders, onCancel, cancelling, history = false }: { orders: Order[]; onCancel: (id: string) => void; cancelling: boolean; history?: boolean }) {
+  if (orders.length === 0) return <Card><CardContent className="p-6 text-center text-muted-foreground text-sm">{history ? 'No order history.' : 'No open orders.'}</CardContent></Card>;
+  return <Card><CardContent className="p-0 divide-y">{orders.map((order) => {
+    const market = order.marketId || order.market_id || 'Unknown market';
+    const amount = order.amountMinor || order.amount_minor || '—';
+    const price = order.priceMinor || order.price_minor || 'market';
+    return <div key={order.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+      <div><div className="font-medium">{market} <span className={order.side === 'buy' ? 'text-success' : 'text-destructive'}>{order.side.toUpperCase()}</span></div><div className="text-xs text-muted-foreground">{order.type} · amount {amount} · price {price}</div></div>
+      <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{order.status}</span>{!history && !['filled', 'cancelled', 'rejected'].includes(order.status) && <Button variant="outline" size="sm" disabled={cancelling} onClick={() => onCancel(order.id)}>Cancel</Button>}</div>
+    </div>;
+  })}</CardContent></Card>;
 }
 
 function Holdings({ positions }: { positions: Position[] }) {
@@ -153,10 +175,10 @@ function Holdings({ positions }: { positions: Position[] }) {
               <div className="text-xs text-muted-foreground">{p.name}</div>
             </div>
             <div className="text-right font-mono">{formatNumber(p.amount, { maximumFractionDigits: 2 })}</div>
-            <div className="text-right font-mono">${p.price.toFixed(4)}</div>
-            <div className="text-right font-mono">${formatNumber(p.value)}</div>
+            <div className="text-right font-mono">{p.price.toFixed(4)} RIAL</div>
+            <div className="text-right font-mono">{formatNumber(p.value)} RIAL</div>
             <div className={`text-right font-mono ${p.pnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-              {p.pnl >= 0 ? '+' : ''}${formatNumber(Math.abs(p.pnl))} ({formatPercent(p.pnlPct)})
+              {p.pnl >= 0 ? '+' : ''}{formatNumber(Math.abs(p.pnl))} RIAL ({formatPercent(p.pnlPct)})
             </div>
           </Link>
         ))}

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/auth-provider';
 import { useToast } from '@/components/ui/toast-provider';
 import { UserPlus } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 const schema = z.object({
   email: z.string().email('Invalid email'),
@@ -26,6 +27,7 @@ type FormData = z.infer<typeof schema>;
 export default function RegisterPage() {
   const router = useRouter();
   const { register: doRegister } = useAuth();
+  const { t } = useI18n();
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
 
@@ -37,10 +39,10 @@ export default function RegisterPage() {
     setSubmitting(true);
     try {
       await doRegister(data.email, data.password, data.username);
-      toast({ variant: 'success', title: 'Welcome to Rial!' });
+      toast({ variant: 'success', title: t('welcomeRial') });
       router.push('/portfolio');
     } catch {
-      toast({ variant: 'destructive', title: 'Sign-up failed', description: 'Email or username may be taken.' });
+      toast({ variant: 'destructive', title: t('signupFailed'), description: t('accountTaken') });
     } finally {
       setSubmitting(false);
     }
@@ -53,41 +55,41 @@ export default function RegisterPage() {
           <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
             <UserPlus className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle>Create your account</CardTitle>
-          <CardDescription>Start trading in less than a minute.</CardDescription>
+          <CardTitle>{t('createAccount')}</CardTitle>
+          <CardDescription>{t('registerDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('email')}</Label>
               <Input id="email" type="email" autoComplete="email" {...register('email')} />
               {errors.email && <p className="text-xs text-destructive mt-1">{errors.email.message}</p>}
             </div>
             <div>
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">{t('username')}</Label>
               <Input id="username" autoComplete="username" {...register('username')} />
               {errors.username && <p className="text-xs text-destructive mt-1">{errors.username.message}</p>}
             </div>
             <div>
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('password')}</Label>
               <Input id="password" type="password" autoComplete="new-password" {...register('password')} />
               {errors.password && <p className="text-xs text-destructive mt-1">{errors.password.message}</p>}
             </div>
             <div>
-              <Label htmlFor="confirm">Confirm password</Label>
+              <Label htmlFor="confirm">{t('confirmPassword')}</Label>
               <Input id="confirm" type="password" autoComplete="new-password" {...register('confirm')} />
               {errors.confirm && <p className="text-xs text-destructive mt-1">{errors.confirm.message}</p>}
             </div>
             <p className="text-xs text-muted-foreground">
-              By signing up you agree to our <Link href={"/legal/terms" as any} className="underline">Terms</Link> and acknowledge the <Link href={"/legal/risks" as any} className="underline">Risk Disclosure</Link>.
+              {t('agreeTerms')} <Link href={"/legal/terms" as any} className="underline">{t('terms')}</Link> {t('ackRisk')} <Link href={"/legal/risks" as any} className="underline">{t('riskDisclosure')}</Link>.
             </p>
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Creating account…' : 'Create account'}
+              {submitting ? t('creatingAccount') : t('createAccount')}
             </Button>
           </form>
           <p className="text-sm text-muted-foreground text-center mt-4">
-            Already have an account?{' '}
-            <Link href="/login" className="text-primary hover:underline">Sign in</Link>
+            {t('alreadyAccount')}{' '}
+            <Link href="/login" className="text-primary hover:underline">{t('login')}</Link>
           </p>
         </CardContent>
       </Card>

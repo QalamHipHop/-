@@ -102,6 +102,17 @@ export class AuthService {
       throw new UnauthorizedException({ code: 'AUTH_INVALID', message: 'Invalid credentials' });
     }
 
+    const enrollment = await this.users.getMfaEnrollment(user.id);
+    if (enrollment?.status === 'confirmed') {
+      const code = input.mfaCode ?? '';
+      const validTotp = /^\d{6}$/.test(code) && await this.mfa.verifyConfirmed(user.id, code);
+      const validRecovery = !validTotp && await this.mfa.verifyRecoveryCode(user.id, code);
+      if (!validTotp && !validRecovery) {
+        await this.bumpFail(ipKey, idKey);
+        throw new UnauthorizedException({ code: 'MFA_REQUIRED', message: 'A valid MFA code is required' });
+      }
+    }
+
     // Reset fail counters on success
     await this.redis.del(ipKey, idKey);
 
@@ -118,6 +129,23 @@ export class AuthService {
 
   async refresh(refreshToken: string): Promise<TokenPair> {
     return this.tokens.rotate(refreshToken);
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.users.findById(userId);
+    if (!user?.password_hash) {
+      throw new BadRequestException({ code: 'PASSWORD_CHANGE_UNAVAILABLE', message: 'Local password authentication is not available' });
+    }
+    const valid = await this.password.verify(currentPassword, user.password_hash);
+    if (!valid) {
+      throw new UnauthorizedException({ code: 'AUTH_INVALID', message: 'Current password is invalid' });
+    }
+    if (currentPassword === newPassword) {
+      throw new BadRequestException({ code: 'PASSWORD_UNCHANGED', message: 'New password must differ from current password' });
+    }
+    const hash = await this.password.hash(newPassword);
+    await this.users.setPasswordHash(userId, hash);
+    await this.tokens.revokeAll(userId);
   }
 
   async logout(userId: string, jti?: string): Promise<void> {

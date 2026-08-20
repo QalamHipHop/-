@@ -43,6 +43,10 @@ services:
   trading-engine:
     ports: !reset []
   wallet-service:
+    environment:
+      RIAL_WALLET_CUSTODY_MODE: vault
+      RIAL_WALLET_CUSTODY_VAULT_ADDR: ${VAULT_ADDR:?VAULT_ADDR must be set for production}
+      RIAL_WALLET_CUSTODY_VAULT_TOKEN: ${VAULT_TOKEN:?VAULT_TOKEN must be set for production}
     ports: !reset []
   launchpad-service:
     ports: !reset []

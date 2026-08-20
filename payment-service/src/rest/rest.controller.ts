@@ -2,17 +2,18 @@
 //  REST controller (public + internal)
 //  Author: Qalamhiphop
 // =============================================================================
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, UseGuards, ForbiddenException } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IntentsService } from '../intents/intents.service';
 import { IntentJSON, IntentKind, IntentStatus } from '../intents/intent.entity';
 import { AdapterRegistry, AdapterName } from '../adapters/adapter.registry';
 import { CreateDepositRestDto, CreateWithdrawalRestDto } from './dto/rest.dto';
-import { Money } from '../adapters/types';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { fromJSON } from '../adapters/types';
+import { InternalTokenGuard } from './internal-token.guard';
 
 @ApiTags('payments')
+@UseGuards(InternalTokenGuard)
 @Controller('v1')
 export class RestController {
   constructor(
@@ -72,6 +73,19 @@ export class RestController {
   ): Promise<{ items: IntentJSON[]; total: number; page: number; pageSize: number }> {
     const r = await this.intents.list({ userId, kind, status, page: page.page, pageSize: page.pageSize });
     return { items: r.items, total: r.total, page: page.page, pageSize: page.pageSize };
+  }
+
+  @Post('intents/:id/refund')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Request an idempotent refund for a succeeded deposit' })
+  async refundIntent(@Param('id') id: string, @Body() body: { userId: string; amount?: { amountMinor: string; currency: string }; reason: string; idempotencyKey: string }) {
+    return this.intents.refund(id, body.userId, body.amount ? fromJSON(body.amount) : undefined, body.reason, body.idempotencyKey);
+  }
+
+  @Get('intents/:id/refunds')
+  @ApiOperation({ summary: 'List refunds for an intent' })
+  async listRefunds(@Param('id') id: string, @Query('userId') userId: string) {
+    return this.intents.listRefunds(id, userId);
   }
 
   @Post('intents/:id/cancel')

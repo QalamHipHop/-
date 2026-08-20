@@ -57,6 +57,57 @@ describe("Rial Smart Contracts — sanity suite", () => {
     expect(await factory.tokenCount()).to.equal(1n);
   });
 
+  it("executes buy and sell through the factory with one token transfer", async () => {
+    const rialAmount = ethers.parseEther("1000");
+    await rial.mint(await user.getAddress(), rialAmount);
+    const [pool, token] = await factory.createToken.staticCall(
+      "Trade Coin", "TRD", ethers.parseEther("1000000"), 0, ethers.parseEther("1000000")
+    );
+    await factory.createToken("Trade Coin", "TRD", ethers.parseEther("1000000"), 0, ethers.parseEther("1000000"));
+    await rial.connect(user).approve(await factory.getAddress(), rialAmount);
+    await factory.connect(user).buy(token, rialAmount, 0);
+    const tokenContract = await ethers.getContractAt("LaunchToken", token);
+    const bought = await tokenContract.balanceOf(await user.getAddress());
+    expect(bought).to.be.gt(0n);
+    await tokenContract.connect(user).approve(await factory.getAddress(), bought);
+    await expect(factory.connect(user).sell(token, 1n, 0)).not.to.be.reverted;
+    expect(await factory.poolOf(token)).to.equal(pool);
+  });
+
+  it("rejects zero supply and zero graduation threshold", async () => {
+    await expect(
+      factory.createToken("Zero", "ZERO", 0n, 0, ethers.parseEther("1")),
+    ).to.be.revertedWithCustomError(factory, "InvalidSupply");
+    await expect(
+      factory.createToken("No Threshold", "NOTH", ethers.parseEther("1000"), 0, 0n),
+    ).to.be.revertedWithCustomError(factory, "InvalidGraduationThreshold");
+  });
+
+  it("does not allow manual graduation below the configured threshold", async () => {
+    const [pool, token] = await factory.createToken.staticCall(
+      "Threshold", "THR", ethers.parseEther("1000"), 0, ethers.parseEther("1000"),
+    );
+    await factory.createToken("Threshold", "THR", ethers.parseEther("1000"), 0, ethers.parseEther("1000"));
+    const poolContract = await ethers.getContractAt("LaunchPool", pool);
+    await expect(factory.graduate(token)).to.be.revertedWithCustomError(poolContract, "BelowThreshold");
+  });
+
+  it("records automatic graduation in factory metadata", async () => {
+    const rialAmount = ethers.parseEther("1000");
+    await rial.mint(await user.getAddress(), rialAmount);
+    const [pool, token] = await factory.createToken.staticCall(
+      "Auto Graduate", "AUTO", ethers.parseEther("1000000000"), 0, 1n,
+    );
+    await factory.createToken("Auto Graduate", "AUTO", ethers.parseEther("1000000000"), 0, 1n);
+    await rial.connect(user).approve(await factory.getAddress(), rialAmount);
+    await factory.connect(user).buy(token, rialAmount, 0);
+    const info = await factory.getInfo(token);
+    const poolContract = await ethers.getContractAt("LaunchPool", pool);
+    expect(await poolContract.state()).to.equal(2n);
+    expect(info.state).to.equal(2n);
+    expect(info.graduatedAt).to.be.gt(0n);
+  });
+
   it("rejects excessive combined fees", async () => {
     const Factory = await ethers.getContractFactory("LaunchpadFactory");
     await expect(

@@ -71,11 +71,14 @@ type LPD struct {
 	MinCreatorStake     int64    `mapstructure:"min_creator_stake"`
 	EnableModeration    bool     `mapstructure:"enable_moderation"`
 	RiskAIEnabled       bool     `mapstructure:"risk_ai_enabled"`
+	RiskFailClosed      bool     `mapstructure:"risk_fail_closed"`
 	DefaultCurve        string   `mapstructure:"default_curve"`
 	AllowedCurves       []string `mapstructure:"allowed_curves"`
 	// graduation target: AMM adapter
-	AMMAdapter string `mapstructure:"amm_adapter"`
-	AMMBase    string `mapstructure:"amm_base"`
+	AMMAdapter  string `mapstructure:"amm_adapter"`
+	AMMBase     string `mapstructure:"amm_base"`
+	AMMEndpoint string `mapstructure:"amm_endpoint"`
+	AMMToken    string `mapstructure:"amm_token"`
 }
 
 func Load() (*Config, error) {
@@ -118,10 +121,13 @@ func Load() (*Config, error) {
 	v.SetDefault("launchpad.min_creator_stake", int64(100_000_000))
 	v.SetDefault("launchpad.enable_moderation", true)
 	v.SetDefault("launchpad.risk_ai_enabled", true)
+	v.SetDefault("launchpad.risk_fail_closed", true)
 	v.SetDefault("launchpad.default_curve", "sigmoid")
 	v.SetDefault("launchpad.allowed_curves", []string{"linear", "exponential", "logarithmic", "sigmoid"})
 	v.SetDefault("launchpad.amm_adapter", "raydium-clone")
 	v.SetDefault("launchpad.amm_base", "RIAL")
+	v.SetDefault("launchpad.amm_endpoint", "")
+	v.SetDefault("launchpad.amm_token", "")
 
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
@@ -141,6 +147,12 @@ func Load() (*Config, error) {
 	}
 	if c.Env == "production" && len(c.Wallet.InternalToken) < 32 {
 		return nil, errors.New("LAUNCHPAD_WALLET_INTERNAL_TOKEN must be at least 32 characters in production")
+	}
+	if c.Env == "production" && (strings.TrimSpace(c.JWT.Secret) == "" || c.JWT.Secret == "change-me-in-prod" || len(c.JWT.Secret) < 32) {
+		return nil, errors.New("LAUNCHPAD_JWT_SECRET must be a unique secret of at least 32 characters in production")
+	}
+	if c.Env == "production" && c.Launchpad.RiskAIEnabled && !c.Launchpad.RiskFailClosed {
+		return nil, errors.New("LAUNCHPAD_RISK_FAIL_CLOSED must be true when risk AI is enabled in production")
 	}
 	return &c, nil
 }

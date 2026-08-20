@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, VecDeque};
 /// Per-price FIFO queue of orders.
 type Queue = VecDeque<Order>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OrderBook {
     pub market: String,
     /// Bids: price -> orders at that price (best bid = highest price).
@@ -30,10 +30,12 @@ impl OrderBook {
         }
     }
 
+    #[allow(dead_code)]
     pub fn best_bid(&self) -> Option<Decimal> {
         self.bids.keys().next_back().copied()
     }
 
+    #[allow(dead_code)]
     pub fn best_ask(&self) -> Option<Decimal> {
         self.asks.keys().next().copied()
     }

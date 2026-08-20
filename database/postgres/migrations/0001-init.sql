@@ -3,6 +3,12 @@
 --  Every service owns its own schema; cross-schema writes go through APIs.
 -- =========================================================================
 
+-- ---------- required PostgreSQL extensions ----------------------------
+-- These extensions are prerequisites for CITEXT identity fields and UUID
+-- generation used throughout the authoritative schema.
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- ---------- shared types ----------------------------------------------
 CREATE SCHEMA IF NOT EXISTS shared;
 

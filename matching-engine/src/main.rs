@@ -5,6 +5,7 @@ mod health;
 mod matcher;
 mod metrics;
 mod orderbook;
+mod persistence;
 mod proto;
 mod service;
 mod types;
@@ -33,7 +34,27 @@ async fn main() -> anyhow::Result<()> {
     let health_state = health::HealthState::new();
 
     let engine = Arc::new(Engine::new(FeeSchedule::default()));
-    let svc = MatchingService::new(engine);
+    let snapshot = persistence::SnapshotStore::from_env();
+    if let Some(store) = &snapshot {
+        if store.load_into(&engine)? {
+            tracing::info!(path = %store.path().display(), "matching snapshot restored");
+        } else {
+            tracing::info!(path = %store.path().display(), "matching snapshot not found; starting empty");
+        }
+    }
+    let svc = MatchingService::with_snapshot(engine.clone(), snapshot.clone());
+    if let Ok(nats_url) = std::env::var("MATCHING_NATS_URL") {
+        let bridge = svc.clone();
+        let subject = std::env::var("MATCHING_TRADE_SUBJECT")
+            .unwrap_or_else(|_| "trading.trade.executed".to_string());
+        tokio::spawn(async move {
+            if let Err(error) = bridge.run_nats_trade_bridge(nats_url, subject).await {
+                tracing::error!(%error, "matching NATS trade bridge stopped");
+            }
+        });
+    } else {
+        tracing::warn!("MATCHING_NATS_URL is unset; trade events remain gRPC-stream-only");
+    }
 
     tracing::info!(
         "matching-engine v{} starting — grpc={} health={} metrics={}",
@@ -55,15 +76,22 @@ async fn main() -> anyhow::Result<()> {
             .await
             .expect("grpc server failed");
     });
-    let h = tokio::spawn(async move { let _ = health::serve_health(health_addr, health_state_bg).await; });
-    let m = tokio::spawn(async move { let _ = metrics::serve_metrics(metrics_addr, metrics_bg).await; });
+    let h = tokio::spawn(async move {
+        let _ = health::serve_health(health_addr, health_state_bg).await;
+    });
+    let m = tokio::spawn(async move {
+        let _ = metrics::serve_metrics(metrics_addr, metrics_bg).await;
+    });
 
     let _ = tokio::join!(grpc, h, m);
+    if let Some(store) = snapshot {
+        store.save(&engine)?;
+    }
     Ok(())
 }
 
 fn init_tracing() {
-    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,matching_engine=debug"));
     tracing_subscriber::registry()

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ import (
 	"github.com/rial/launchpad-service/internal/risk"
 	"github.com/rial/launchpad-service/internal/store"
 	"github.com/rial/launchpad-service/internal/wallet"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -51,6 +53,12 @@ func main() {
 		logger.Warn("nats disabled", zap.Error(err))
 		nc = nil
 	}
+	var outboxRelay *event.OutboxRelay
+	if nc != nil {
+		outboxRelay = event.NewOutboxRelay(pg.Pool, nc, logger)
+		outboxRelay.Start()
+		defer outboxRelay.Close()
+	}
 
 	kc, err := event.NewKafkaProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic, logger)
 	if err != nil {
@@ -61,10 +69,27 @@ func main() {
 	riskClient := risk.NewClient(cfg.AI.EngineURL, logger)
 	walletClient := wallet.NewClient(cfg.Wallet)
 	curveEngine := curve.NewEngine(logger)
-	gradSvc := graduation.NewService(cfg, curveEngine, pg, rd, nc, logger)
+	ammAdapter := graduation.NewHTTPAdapter(cfg.Launchpad.AMMEndpoint, cfg.Launchpad.AMMToken)
+	gradSvc := graduation.NewService(cfg, curveEngine, pg, rd, nc, ammAdapter, logger)
 	launchSvc := launch.NewService(cfg, pg, rd, nc, kc, riskClient, walletClient, curveEngine, gradSvc, logger)
 
 	srv := api.NewServer(launchSvc, gradSvc, logger, cfg.InternalToken)
+	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(middleware.ChainUnary(
+		middleware.Recovery(logger),
+		middleware.Logging(logger),
+		middleware.JWTAuth(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.Audience),
+	)))
+	api.RegisterLaunchpadServer(grpcSrv, srv)
+	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPC.Port)
+	if err != nil {
+		logger.Fatal("grpc listen", zap.Error(err))
+	}
+	go func() {
+		logger.Info("launchpad grpc listening", zap.String("port", cfg.GRPC.Port))
+		if err := grpcSrv.Serve(grpcListener); err != nil {
+			logger.Error("grpc serve", zap.Error(err))
+		}
+	}()
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,
 		Handler:           middleware.HTTPTracing(srv.Handler(), logger),
@@ -85,4 +110,5 @@ func main() {
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutCancel()
 	_ = httpSrv.Shutdown(shutCtx)
+	grpcSrv.GracefulStop()
 }

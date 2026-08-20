@@ -18,7 +18,7 @@ export class MetricsSubscription {
     filter: (payload: { tradeFeed: TradeTick; variables: { symbol: string } }) =>
       payload.tradeFeed.symbol === payload.variables.symbol,
   })
-  tradeFeed(@Args('symbol') symbol: string): AsyncIterator<TradeTick> {
+  tradeFeed(@Args('symbol') _symbol: string): AsyncIterator<TradeTick> {
     return this.pubsub.asyncIterator<TradeTick>('TRADE_FEED');
   }
 }

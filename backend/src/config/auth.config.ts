@@ -12,6 +12,7 @@ export interface AuthConfig {
   passwordHashRounds: number;
   session: {
     cookieName: string;
+    refreshCookieName: string;
     cookieSecure: boolean;
     cookieSameSite: 'strict' | 'lax' | 'none';
   };
@@ -24,8 +25,8 @@ export interface AuthConfig {
 
 export const authConfig = registerAs('auth', (): AuthConfig => {
   const secret = process.env.JWT_SECRET ?? '';
-  if (!secret && process.env.NODE_ENV === 'production') {
-    throw new Error('JWT_SECRET is required in production');
+  if (process.env.NODE_ENV === 'production' && (secret.length < 32 || secret === 'dev-only-insecure-secret-change-me')) {
+    throw new Error('JWT_SECRET must be a unique secret of at least 32 characters in production');
   }
   return {
     jwt: {
@@ -39,6 +40,7 @@ export const authConfig = registerAs('auth', (): AuthConfig => {
     passwordHashRounds: Number(process.env.BCRYPT_ROUNDS ?? 12),
     session: {
       cookieName: process.env.SESSION_COOKIE_NAME ?? 'rial_session',
+      refreshCookieName: process.env.REFRESH_COOKIE_NAME ?? 'rial_refresh',
       cookieSecure: (process.env.SESSION_COOKIE_SECURE ?? 'true') === 'true',
       cookieSameSite: (process.env.SESSION_COOKIE_SAMESITE as AuthConfig['session']['cookieSameSite']) ?? 'lax',
     },

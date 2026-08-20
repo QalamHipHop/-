@@ -1,14 +1,16 @@
 """Text & image moderation.
 
-- Text: lexicon + caps + emoji scoring.
-- Image: NSFW brand-safety heuristic. In production, calls an ONNX CLIP
-  classifier; here we expose the same interface with a stub that returns
-  score=0 when no model is loaded.
+- Text: deterministic lexicon + caps + emoji signal.
+- Image: fail-closed contract until a verified ONNX model is configured.
+
+A missing image model is an unavailable safety decision, never a clean score.
+Callers must inspect ``status`` and block or quarantine sensitive operations.
 """
 from __future__ import annotations
 
 import base64
 import logging
+import math
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -42,11 +44,16 @@ def text_moderation(text: str) -> dict[str, Any]:
     z += 1.5 * profanity_hits
     z += 3.0 * hate_hits       # much higher weight
     z += 2.5 * scam_hits
-    z += 0.5 * f["caps_ratio"] * 10
+    # Sentence-initial capitalization is normal. Only sustained shouting
+    # contributes to risk, avoiding false positives on ordinary prose.
+    caps_excess = max(0.0, f["caps_ratio"] - 0.5)
+    z += 0.5 * caps_excess * 10
     z += 0.3 * f["exclaim"]
-    score = float(sigmoid(z))
+    # Moderation score represents positive evidence; a clean text baseline is
+    # 0.0 rather than sigmoid(0)=0.5.
+    score = 1.0 - math.exp(-max(z, 0.0))
     return {
-        "score": score,
+        "score": float(min(score, 1.0)),
         "evidence": {
             "profanity_hits": profanity_hits,
             "hate_hits": hate_hits,
@@ -57,14 +64,23 @@ def text_moderation(text: str) -> dict[str, Any]:
 
 
 async def image_moderation(base64_or_url: str | None) -> dict[str, Any]:
-    """Stub. Real impl: load ONNX CLIP, embed, score against NSFW bank."""
+    """Return an explicit unavailable decision until an image model is loaded.
+
+    The old implementation returned score=0 for every image, which falsely
+    represented a missing classifier as a clean moderation result. Keep the
+    contract deterministic, but make callers fail closed on ``status``.
+    """
     if not base64_or_url:
-        return {"score": 0.0, "evidence": {"reason": "no input"}}
+        return {"status": "invalid", "score": None, "evidence": {"reason": "no input"}}
     try:
         if base64_or_url.startswith("data:") or len(base64_or_url) > 200:
-            raw = base64.b64decode(base64_or_url.split(",", 1)[-1])
+            raw = base64.b64decode(base64_or_url.split(",", 1)[-1], validate=True)
+            if not raw:
+                return {"status": "invalid", "score": None, "evidence": {"reason": "empty_image"}}
             _ = BytesIO(raw).getbuffer().nbytes
-        return {"score": 0.0, "evidence": {"bytes": len(base64_or_url)}}
+        else:
+            return {"status": "unavailable", "score": None, "evidence": {"reason": "image_model_not_configured"}}
+        return {"status": "unavailable", "score": None, "evidence": {"reason": "image_model_not_configured", "bytes": len(raw)}}
     except Exception as e:  # noqa: BLE001
         log.warning("image decode failed: %s", e)
-        return {"score": 0.0, "evidence": {"error": "decode_failed"}}
+        return {"status": "invalid", "score": None, "evidence": {"error": "decode_failed"}}

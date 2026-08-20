@@ -3,7 +3,7 @@
 // Author: Qalamhiphop
 // =============================================================================
 import { IntentsService } from '../intents.service';
-import { IntentStore } from '../intent.store';
+import { IntentStore, PaymentRefund } from '../intent.store';
 import { AdapterRegistry } from '../../adapters/adapter.registry';
 import { ManualAdapter } from '../../adapters/manual.adapter';
 import { ConfigService } from '@nestjs/config';
@@ -38,6 +38,8 @@ const cfg = {
 class MemoryIntentStore {
   private readonly byId = new Map<string, PaymentIntent>();
   private readonly byIdempotency = new Map<string, string>();
+  private readonly refunds = new Map<string, PaymentRefund>();
+  private readonly refundKeys = new Map<string, string>();
 
   async create(intent: PaymentIntent): Promise<boolean> {
     const key = `${intent.userId}\u0000${intent.idempotencyKey}`;
@@ -50,6 +52,45 @@ class MemoryIntentStore {
   async save(intent: PaymentIntent): Promise<PaymentIntent> {
     this.byId.set(intent.id, { ...intent });
     return intent;
+  }
+
+  async markSettlementPending(id: string): Promise<void> {
+    const intent = this.byId.get(id);
+    if (intent) this.byId.set(id, { ...intent, settlementStatus: 'pending' });
+  }
+
+  async markSettlementFailed(id: string): Promise<void> {
+    const intent = this.byId.get(id);
+    if (intent) this.byId.set(id, { ...intent, settlementStatus: 'failed' });
+  }
+
+  async markSettlementSucceeded(id: string): Promise<void> {
+    const intent = this.byId.get(id);
+    if (intent) this.byId.set(id, { ...intent, settlementStatus: 'succeeded' });
+  }
+
+  async listSettlementRecovery(): Promise<PaymentIntent[]> { return []; }
+
+  async createRefund(refund: PaymentRefund): Promise<PaymentRefund | null> {
+    const key = `${refund.userId}:${refund.idempotencyKey}`;
+    if (this.refundKeys.has(key)) return null;
+    this.refunds.set(refund.id, { ...refund });
+    this.refundKeys.set(key, refund.id);
+    return refund;
+  }
+
+  async findRefundByIdempotency(userId: string, key: string): Promise<PaymentRefund | undefined> {
+    const id = this.refundKeys.get(`${userId}:${key}`);
+    return id ? this.refunds.get(id) : undefined;
+  }
+
+  async saveRefund(refund: PaymentRefund): Promise<PaymentRefund> {
+    this.refunds.set(refund.id, { ...refund });
+    return refund;
+  }
+
+  async listRefunds(intentId: string): Promise<PaymentRefund[]> {
+    return [...this.refunds.values()].filter((refund) => refund.intentId === intentId);
   }
 
   async get(id: string): Promise<PaymentIntent | undefined> {
@@ -114,6 +155,70 @@ describe('IntentsService', () => {
       userId: 'u1', adapter: 'manual', amount: { amountMinor: 10_000n, currency: 'USD' },
       destination: '', reference: 'r1', idempotencyKey: 'idem_w1',
     })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refunds a succeeded deposit exactly once per idempotency key', async () => {
+    const created = await service.createDeposit({ userId: 'u1', adapter: 'manual', amount: { amountMinor: 10_000n, currency: 'USD' }, reference: 'refund-ref', idempotencyKey: 'refund-intent' });
+    const intent = await (service as any).store.get(created.id);
+    intent.status = 'succeeded';
+    intent.externalId = 'manual_external';
+    await (service as any).store.save(intent);
+    const first = await service.refund(created.id, 'u1', undefined, 'customer request', 'refund-key');
+    const second = await service.refund(created.id, 'u1', undefined, 'customer request', 'refund-key');
+    expect(first.id).toBe(second.id);
+    expect(first.status).toBe('processing');
+  });
+
+  it('settles a successful deposit once across duplicate success callbacks', async () => {
+    const store = new MemoryIntentStore() as unknown as IntentStore;
+    let creditCalls = 0;
+    const wallet = { creditDeposit: async () => { creditCalls += 1; return 'wallet-tx-1'; } } as any;
+    const manual = new ManualAdapter(cs);
+    const registry = new AdapterRegistry(manual, {} as any, {} as any, {} as any);
+    const svc = new IntentsService(cfg, registry, store, wallet);
+    const created = await svc.createDeposit({ userId: 'u1', adapter: 'manual', amount: { amountMinor: 10_000n, currency: 'RIAL' }, reference: 'verify-ref', idempotencyKey: 'verify-intent' });
+    const first = await svc.applyVerifyResult(created.id, 'succeeded', { amountMinor: 10_000n, currency: 'RIAL' });
+    const second = await svc.applyVerifyResult(created.id, 'succeeded', { amountMinor: 10_000n, currency: 'RIAL' });
+    expect(first?.status).toBe('succeeded');
+    expect(second?.status).toBe('succeeded');
+    expect(creditCalls).toBe(1);
+  });
+
+  it('converts whole IRR into eight-decimal internal RIAL before wallet settlement', async () => {
+    const store = new MemoryIntentStore() as unknown as IntentStore;
+    let settledAmount = 0n;
+    const wallet = { creditDeposit: async (input: { amountMinor: bigint }) => { settledAmount = input.amountMinor; return 'wallet-tx-irr'; } } as any;
+    const manual = new ManualAdapter(cs);
+    const registry = new AdapterRegistry(manual, {} as any, {} as any, {} as any);
+    const svc = new IntentsService(cfg, registry, store, wallet);
+    const created = await svc.createDeposit({ userId: 'u1', adapter: 'manual', amount: { amountMinor: 25_000n, currency: 'IRR' }, reference: 'irr-ref', idempotencyKey: 'irr-intent' });
+    await svc.applyVerifyResult(created.id, 'succeeded', { amountMinor: 25_000n, currency: 'IRR' });
+    expect(settledAmount).toBe(2_500_000_000_000n);
+  });
+
+  it('converts whole IRT into ten-times-RIAL at eight internal decimals', async () => {
+    const store = new MemoryIntentStore() as unknown as IntentStore;
+    let settledAmount = 0n;
+    const wallet = { creditDeposit: async (input: { amountMinor: bigint }) => { settledAmount = input.amountMinor; return 'wallet-tx-irt'; } } as any;
+    const manual = new ManualAdapter(cs);
+    const registry = new AdapterRegistry(manual, {} as any, {} as any, {} as any);
+    const svc = new IntentsService(cfg, registry, store, wallet);
+    const created = await svc.createDeposit({ userId: 'u1', adapter: 'manual', amount: { amountMinor: 25_000n, currency: 'IRT' }, reference: 'irt-ref', idempotencyKey: 'irt-intent' });
+    await svc.applyVerifyResult(created.id, 'succeeded', { amountMinor: 25_000n, currency: 'IRT' });
+    expect(settledAmount).toBe(25_000_000_000_000n);
+  });
+
+  it('does not let an older failed callback overwrite a succeeded intent', async () => {
+    const store = new MemoryIntentStore() as unknown as IntentStore;
+    const wallet = { creditDeposit: async () => 'wallet-tx-2' } as any;
+    const manual = new ManualAdapter(cs);
+    const registry = new AdapterRegistry(manual, {} as any, {} as any, {} as any);
+    const svc = new IntentsService(cfg, registry, store, wallet);
+    const created = await svc.createDeposit({ userId: 'u1', adapter: 'manual', amount: { amountMinor: 10_000n, currency: 'RIAL' }, reference: 'order-ref', idempotencyKey: 'order-intent' });
+    await svc.applyVerifyResult(created.id, 'succeeded', { amountMinor: 10_000n, currency: 'RIAL' });
+    const stale = await svc.applyVerifyResult(created.id, 'failed', undefined, 'late provider failure');
+    expect(stale?.status).toBe('succeeded');
+    expect(stale?.failureReason).toBeUndefined();
   });
 
   it('404 on unknown intent', async () => {

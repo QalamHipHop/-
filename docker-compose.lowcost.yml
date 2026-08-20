@@ -1,0 +1,74 @@
+# RIAL low-cost deployment overlay.
+# This overlay keeps every service and volume; it only bounds resources for a small,
+# single-host staging or early production footprint. Tune *_MEM_LIMIT variables upward
+# before sustained high volume.
+services:
+  postgres:
+    mem_limit: ${POSTGRES_MEM_LIMIT:-1024m}
+    cpus: ${POSTGRES_CPUS:-1.0}
+  redis:
+    mem_limit: ${REDIS_MEM_LIMIT:-256m}
+    cpus: ${REDIS_CPUS:-0.5}
+  clickhouse:
+    mem_limit: ${CLICKHOUSE_MEM_LIMIT:-1024m}
+    cpus: ${CLICKHOUSE_CPUS:-1.0}
+  elasticsearch:
+    mem_limit: ${ELASTICSEARCH_MEM_LIMIT:-768m}
+    cpus: ${ELASTICSEARCH_CPUS:-1.0}
+  minio:
+    mem_limit: ${MINIO_MEM_LIMIT:-512m}
+    cpus: ${MINIO_CPUS:-0.5}
+  nats:
+    mem_limit: ${NATS_MEM_LIMIT:-256m}
+    cpus: ${NATS_CPUS:-0.5}
+  kafka:
+    mem_limit: ${KAFKA_MEM_LIMIT:-1024m}
+    cpus: ${KAFKA_CPUS:-1.0}
+  meilisearch:
+    mem_limit: ${MEILI_MEM_LIMIT:-384m}
+    cpus: ${MEILI_CPUS:-0.5}
+  otel-collector:
+    mem_limit: ${OTEL_MEM_LIMIT:-256m}
+    cpus: ${OTEL_CPUS:-0.25}
+  prometheus:
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-384m}
+    cpus: ${PROMETHEUS_CPUS:-0.5}
+  grafana:
+    mem_limit: ${GRAFANA_MEM_LIMIT:-256m}
+    cpus: ${GRAFANA_CPUS:-0.25}
+  loki:
+    mem_limit: ${LOKI_MEM_LIMIT:-384m}
+    cpus: ${LOKI_CPUS:-0.5}
+  nginx:
+    mem_limit: ${NGINX_MEM_LIMIT:-128m}
+    cpus: ${NGINX_CPUS:-0.25}
+  backend:
+    mem_limit: ${BACKEND_MEM_LIMIT:-768m}
+    cpus: ${BACKEND_CPUS:-1.0}
+  frontend:
+    mem_limit: ${FRONTEND_MEM_LIMIT:-512m}
+    cpus: ${FRONTEND_CPUS:-0.5}
+  matching-engine:
+    mem_limit: ${MATCHING_MEM_LIMIT:-512m}
+    cpus: ${MATCHING_CPUS:-1.0}
+  trading-engine:
+    mem_limit: ${TRADING_MEM_LIMIT:-512m}
+    cpus: ${TRADING_CPUS:-0.75}
+  wallet-service:
+    mem_limit: ${WALLET_MEM_LIMIT:-512m}
+    cpus: ${WALLET_CPUS:-0.75}
+  launchpad-service:
+    mem_limit: ${LAUNCHPAD_MEM_LIMIT:-512m}
+    cpus: ${LAUNCHPAD_CPUS:-0.75}
+  payment-service:
+    mem_limit: ${PAYMENT_MEM_LIMIT:-384m}
+    cpus: ${PAYMENT_CPUS:-0.5}
+  notification-service:
+    mem_limit: ${NOTIFICATION_MEM_LIMIT:-256m}
+    cpus: ${NOTIFICATION_CPUS:-0.25}
+  analytics:
+    mem_limit: ${ANALYTICS_MEM_LIMIT:-768m}
+    cpus: ${ANALYTICS_CPUS:-0.75}
+  ai-engine:
+    mem_limit: ${AI_MEM_LIMIT:-512m}
+    cpus: ${AI_CPUS:-0.5}

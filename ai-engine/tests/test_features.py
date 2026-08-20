@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from src.features.wallet_features import text_features, wallet_features
-from src.scoring.moderator import text_moderation
+from src.scoring.moderator import image_moderation, text_moderation
 from src.scoring.risk_scorer import fraud_score, risk_score, rugpull_score
 
 
@@ -39,7 +39,16 @@ def test_text_features_clean_text() -> None:
 def test_text_features_scam_keywords() -> None:
     f = text_features("100x GUARANTEED, send me your ETH for the moonshot!!!")
     assert f["risk_hits"] >= 2
-    assert f["caps_ratio"] > 0.5
+    # The signal contains uppercase emphasis, but not more uppercase than
+    # lowercase letters; caps_ratio is defined per-letter.
+    assert f["caps_ratio"] > 0.25
+
+
+@pytest.mark.asyncio
+async def test_image_moderation_without_model_is_unavailable() -> None:
+    result = await image_moderation("https://example.invalid/image.png")
+    assert result["status"] == "unavailable"
+    assert result["score"] is None
 
 
 def test_text_moderation_clean() -> None:

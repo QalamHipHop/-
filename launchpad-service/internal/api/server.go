@@ -24,6 +24,7 @@ import (
 )
 
 type Server struct {
+	UnimplementedLaunchpadServer
 	launch        *launch.Service
 	grad          *graduation.Service
 	log           *zap.Logger
@@ -40,6 +41,7 @@ func NewServer(l *launch.Service, g *graduation.Service, log *zap.Logger, intern
 func (s *Server) Handler() http.Handler {
 	r := mux.NewRouter()
 	r.HandleFunc("/healthz", s.healthz).Methods("GET")
+	r.HandleFunc("/metrics", s.metrics).Methods("GET")
 	r.HandleFunc("/api/v1/tokens", s.listTokens).Methods("GET")
 	r.HandleFunc("/api/v1/tokens/{id}", s.getToken).Methods("GET")
 
@@ -55,14 +57,6 @@ func (s *Server) Handler() http.Handler {
 	internal.HandleFunc("/api/v1/tokens/{id}/buy", s.buy).Methods("POST")
 	internal.HandleFunc("/api/v1/tokens/{id}/sell", s.sell).Methods("POST")
 	return r
-}
-
-// RegisterLaunchpadServer / RegisterLaunchpadHandlerFromEndpoint are
-// gRPC-server stubs that satisfy the gateway runtime import; we keep them
-// as no-ops until native gRPC codegen is added to the build pipeline.
-func RegisterLaunchpadServer(_ interface{}, _ *Server) {}
-func RegisterLaunchpadHandlerFromEndpoint(_ interface{}, _ interface{}, _ string, _ []interface{}) error {
-	return errors.New("gRPC gateway not enabled in this build (using HTTP/JSON)")
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {

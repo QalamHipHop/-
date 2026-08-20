@@ -25,9 +25,14 @@ function limit(kyc: number, defaultMinor: string): bigint {
   return BigInt(env ?? defaultMinor);
 }
 
-export const walletConfig = registerAs('wallet', (): WalletConfig => ({
+export const walletConfig = registerAs('wallet', (): WalletConfig => {
+  const serviceToken = process.env.WALLET_SERVICE_TOKEN ?? '';
+  if (process.env.NODE_ENV === 'production' && (serviceToken.length < 32 || serviceToken === 'change-me')) {
+    throw new Error('WALLET_SERVICE_TOKEN must be a unique secret of at least 32 characters in production');
+  }
+  return {
   grpcUrl: process.env.WALLET_GRPC_URL ?? 'wallet-service:9090',
-  serviceToken: process.env.WALLET_SERVICE_TOKEN ?? 'change-me',
+  serviceToken,
   enabled: process.env.WALLET_ENABLED !== 'false',
   timeoutMs: Number(process.env.WALLET_TIMEOUT_MS ?? 5_000),
   retry: {
@@ -45,4 +50,5 @@ export const walletConfig = registerAs('wallet', (): WalletConfig => ({
     2: limit(2, '5000000000000'),        //  50,000 RIAL
     3: limit(3, '50000000000000'),       // 500,000 RIAL
   },
-}));
+  };
+});

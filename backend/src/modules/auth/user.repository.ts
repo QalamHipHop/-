@@ -6,6 +6,7 @@
 import { Injectable } from '@nestjs/common';
 import { PoolClient } from 'pg';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 
 import { DbService } from '../../infrastructure/database/db.service';
 
@@ -31,6 +32,18 @@ export interface IdentityRow {
   provider_uid: string;
   meta: Record<string, unknown>;
   created_at: Date;
+}
+
+export interface MfaEnrollmentRow {
+  user_id: string;
+  secret_envelope: string;
+  status: 'pending' | 'confirmed' | 'revoked';
+  recovery_code_hashes: string[];
+  confirmation_attempts: number;
+  created_at: Date;
+  confirmed_at: Date | null;
+  revoked_at: Date | null;
+  updated_at: Date;
 }
 
 export interface KycApplicationRow {
@@ -155,6 +168,75 @@ export class UserRepository {
     await this.db.query(
       `UPDATE auth.users SET kyc_level = GREATEST(kyc_level, $1), updated_at = now() WHERE id = $2`,
       [level, userId],
+    );
+  }
+
+  // -------------------------------------------------------------- MFA
+
+  async getMfaEnrollment(userId: string): Promise<MfaEnrollmentRow | null> {
+    const r = await this.db.query<MfaEnrollmentRow>(
+      `SELECT * FROM auth.mfa_enrollments WHERE user_id = $1`,
+      [userId],
+    );
+    return r.rows[0] ?? null;
+  }
+
+  async createMfaEnrollment(userId: string, secretEnvelope: string, recoveryCodeHashes: string[]): Promise<void> {
+    await this.db.query(
+      `INSERT INTO auth.mfa_enrollments (user_id, secret_envelope, status, recovery_code_hashes)
+       VALUES ($1, $2, 'pending', $3::text[])
+       ON CONFLICT (user_id) DO UPDATE SET secret_envelope = EXCLUDED.secret_envelope,
+         status = 'pending', recovery_code_hashes = EXCLUDED.recovery_code_hashes,
+         confirmation_attempts = 0, confirmed_at = NULL, revoked_at = NULL, updated_at = now()`,
+      [userId, secretEnvelope, recoveryCodeHashes],
+    );
+  }
+
+  async confirmMfaEnrollment(userId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE auth.mfa_enrollments SET status = 'confirmed', confirmed_at = now(), updated_at = now()
+       WHERE user_id = $1 AND status = 'pending'`,
+      [userId],
+    );
+  }
+
+  async incrementMfaConfirmationAttempts(userId: string): Promise<number> {
+    const r = await this.db.query<{ confirmation_attempts: number }>(
+      `UPDATE auth.mfa_enrollments SET confirmation_attempts = confirmation_attempts + 1, updated_at = now()
+       WHERE user_id = $1 AND status = 'pending'
+       RETURNING confirmation_attempts`,
+      [userId],
+    );
+    return r.rows[0]?.confirmation_attempts ?? 0;
+  }
+
+  async consumeMfaRecoveryCode(userId: string, code: string): Promise<boolean> {
+    return this.db.withTransaction(async (tx) => {
+      const r = await tx.query<{ recovery_code_hashes: string[] }>(
+        `SELECT recovery_code_hashes FROM auth.mfa_enrollments
+         WHERE user_id = $1 AND status = 'confirmed' FOR UPDATE`,
+        [userId],
+      );
+      const hashes = r.rows[0]?.recovery_code_hashes ?? [];
+      for (let i = 0; i < hashes.length; i += 1) {
+        if (await bcrypt.compare(code, hashes[i])) {
+          const remaining = hashes.filter((_, index) => index !== i);
+          await tx.query(
+            `UPDATE auth.mfa_enrollments SET recovery_code_hashes = $2::text[], updated_at = now() WHERE user_id = $1`,
+            [userId, remaining],
+          );
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  async revokeMfaEnrollment(userId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE auth.mfa_enrollments SET status = 'revoked', revoked_at = now(), recovery_code_hashes = '{}', updated_at = now()
+       WHERE user_id = $1 AND status <> 'revoked'`,
+      [userId],
     );
   }
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { TrendingUp, Droplets, Flame } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 interface BondingCurveMeterProps {
   progress: number;
@@ -22,6 +23,7 @@ export function BondingCurveMeter({
   target,
   graduated,
 }: BondingCurveMeterProps) {
+  const { t } = useI18n();
   const [pulse, setPulse] = useState(false);
   useEffect(() => {
     const id = setInterval(() => setPulse((p) => !p), 1500);
@@ -34,28 +36,28 @@ export function BondingCurveMeter({
         <div className="flex items-center justify-between">
           <h3 className="font-semibold flex items-center gap-2">
             <Flame className={`h-4 w-4 text-orange-500 ${pulse ? 'animate-pulse' : ''}`} />
-            Bonding Curve Progress
+            {t('bondingCurve')}
           </h3>
           {graduated ? (
-            <span className="text-xs font-medium text-success">Graduated</span>
+            <span className="text-xs font-medium text-success">{t('graduatedStatus')}</span>
           ) : (
-            <span className="text-xs font-medium text-muted-foreground">Pre-graduation</span>
+            <span className="text-xs font-medium text-muted-foreground">{t('preGraduation')}</span>
           )}
         </div>
 
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span>{progress.toFixed(1)}%</span>
-            <span className="text-muted-foreground">100% → DEX liquidity</span>
+            <span className="text-muted-foreground">{t('dexLiquidity')}</span>
           </div>
           <Progress value={progress} className="h-3" />
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <Stat icon={<TrendingUp className="h-4 w-4" />} label="Current price" value={`$${currentPrice.toFixed(currentPrice < 0.01 ? 6 : 4)}`} />
-          <Stat icon={<Droplets className="h-4 w-4" />} label="Next threshold" value={`$${nextThreshold.toFixed(4)}`} />
-          <Stat label="Raised" value={`$${raised.toLocaleString()}`} />
-          <Stat label="Target" value={`$${target.toLocaleString()}`} />
+          <Stat icon={<TrendingUp className="h-4 w-4" />} label={t('price')} value={`${currentPrice.toFixed(currentPrice < 0.01 ? 6 : 4)} ﷼`} />
+          <Stat icon={<Droplets className="h-4 w-4" />} label={t('total')} value={`${nextThreshold.toFixed(4)} ﷼`} />
+          <Stat label={t('amount')} value={`${raised.toLocaleString()} ﷼`} />
+          <Stat label={t('available')} value={`${target.toLocaleString()} ﷼`} />
         </div>
       </CardContent>
     </Card>

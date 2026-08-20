@@ -13,7 +13,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAINNET_GENESIS_HASH = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d';
-const DEFAULT_MAINNET_RPC = 'https://api.mainnet-beta.solana.com';
+
+function solanaDisabledResponse() {
+  return NextResponse.json(
+    { error: 'external Solana network is disabled; use the internal Rial network' },
+    { status: 410 },
+  );
+}
+
+function solanaEnabled() {
+  return process.env.RIAL_ONLY_MODE === 'false' && process.env.ENABLE_SOLANA_MAINNET === 'true';
+}
 
 type MintPlanRequest = {
   owner?: string;
@@ -26,6 +36,9 @@ type MintPlanRequest = {
  * instruction; the owner wallet remains the fee payer and final signer.
  */
 export async function GET(request: NextRequest) {
+  if (!solanaEnabled()) return solanaDisabledResponse();
+  const rpcUrl = process.env.SOLANA_MAINNET_RPC_URL;
+  if (!rpcUrl) return NextResponse.json({ error: 'Solana RPC is not configured' }, { status: 503 });
   const mintParam = request.nextUrl.searchParams.get('mint');
   if (!mintParam) return NextResponse.json({ error: 'mint query parameter is required' }, { status: 400 });
 
@@ -36,7 +49,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'mint must be a valid Solana public address' }, { status: 400 });
   }
 
-  const connection = new Connection(process.env.SOLANA_MAINNET_RPC_URL ?? DEFAULT_MAINNET_RPC, 'confirmed');
+  const connection = new Connection(rpcUrl, 'confirmed');
   try {
     if (await connection.getGenesisHash() !== MAINNET_GENESIS_HASH) {
       return NextResponse.json({ error: 'configured RPC is not Solana Mainnet' }, { status: 503 });
@@ -64,6 +77,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!solanaEnabled()) return solanaDisabledResponse();
+  const rpcUrl = process.env.SOLANA_MAINNET_RPC_URL;
+  if (!rpcUrl) return NextResponse.json({ error: 'Solana RPC is not configured' }, { status: 503 });
   let payload: MintPlanRequest;
   try {
     payload = (await request.json()) as MintPlanRequest;
@@ -83,7 +99,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'decimals must be an integer between 0 and 9' }, { status: 400 });
   }
 
-  const rpcUrl = process.env.SOLANA_MAINNET_RPC_URL ?? DEFAULT_MAINNET_RPC;
   const connection = new Connection(rpcUrl, 'confirmed');
   try {
     const genesisHash = await connection.getGenesisHash();

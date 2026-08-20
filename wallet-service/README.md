@@ -11,7 +11,10 @@ The wallet & custody service. Owns the `wallet` schema (per ADR-0001).
 
 ## Endpoints (HTTP)
 - `GET  /v1/accounts/:user_id`
-- `POST /v1/credit` — body: `{ user_id, amount, type, idempotency_key, ... }`
+- `POST /v1/credit` — internal-only single-account credit for explicitly authorized platform operations; it is not the fiat-deposit boundary.
+- `POST /v1/settle-deposit` — body: `{ user_id, amount, reference, idempotency_key, metadata }`; atomically transfers already-cleared reserve funds to the user account. Payment-service must use this endpoint after provider verification.
+- `POST /v1/settle-trade` — body: `{ buyer_id, seller_id, notional, buyer_fee, seller_fee, reference, idempotency_key, metadata }`; captures buyer pending RIAL and atomically distributes seller net proceeds plus treasury fees. Amounts are decimal strings at the HTTP boundary.
+- `POST /v1/accounts/:user_id/reserve` and `POST /v1/accounts/:user_id/release` — body: `{ user_id, amount, reference, idempotency_key, metadata }`; move RIAL between available and pending without changing total balance.
 - `POST /v1/debit`
 - `POST /v1/transfer`
 - `POST /v1/withdraw`

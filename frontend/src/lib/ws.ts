@@ -21,6 +21,8 @@ export class WsClient {
   private closedByUser = false;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private subscriptions = new Map<string, { channel: string; params?: Record<string, unknown> }>();
+  private hasConnected = false;
 
   constructor(private readonly opts: WsClientOptions = {}) {
     this.opts = {
@@ -39,8 +41,11 @@ export class WsClient {
     this.socket = new WebSocket(url, this.opts.protocols);
 
     this.socket.addEventListener('open', () => {
+      const reconnecting = this.hasConnected;
+      this.hasConnected = true;
       this.attempts = 0;
       this.flushQueue();
+      if (reconnecting) this.replaySubscriptions();
       this.startHeartbeat();
     });
 
@@ -94,10 +99,15 @@ export class WsClient {
   }
 
   subscribe(channel: string, params?: Record<string, unknown>) {
+    const key = `${channel}:${JSON.stringify(params ?? {})}`;
+    this.subscriptions.set(key, { channel, params });
     this.send({ type: 'subscribe', channel, params });
   }
 
   unsubscribe(channel: string) {
+    for (const [key, subscription] of this.subscriptions) {
+      if (subscription.channel === channel) this.subscriptions.delete(key);
+    }
     this.send({ type: 'unsubscribe', channel });
   }
 
@@ -105,6 +115,12 @@ export class WsClient {
     while (this.queue.length && this.socket?.readyState === WebSocket.OPEN) {
       const msg = this.queue.shift()!;
       this.socket.send(msg);
+    }
+  }
+
+  private replaySubscriptions() {
+    for (const { channel, params } of this.subscriptions.values()) {
+      this.send({ type: 'subscribe', channel, params });
     }
   }
 

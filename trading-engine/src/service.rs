@@ -11,9 +11,7 @@ use tracing::info;
 use crate::proto::rial::trading::v1 as pb;
 use crate::router::Router;
 use crate::strategy::StrategyEngine;
-use crate::types::{
-    now_ms, parse_decimal, Fill, OrderRequest, Quote, RouteStatus, StrategySpec,
-};
+use crate::types::{now_ms, parse_decimal, Fill, OrderRequest, Quote, RouteStatus, StrategySpec};
 
 pub struct TradingService {
     pub router: Arc<Router>,
@@ -58,9 +56,15 @@ fn fill_to_pb(f: &Fill) -> pb::FillEvent {
         venue_id: f.venue_id.clone(),
         symbol: f.symbol.clone(),
         side: f.side as i32,
-        price: Some(pb::Decimal { value: f.price.to_string() }),
-        quantity: Some(pb::Decimal { value: f.quantity.to_string() }),
-        fee: Some(pb::Decimal { value: f.fee.to_string() }),
+        price: Some(pb::Decimal {
+            value: f.price.to_string(),
+        }),
+        quantity: Some(pb::Decimal {
+            value: f.quantity.to_string(),
+        }),
+        fee: Some(pb::Decimal {
+            value: f.fee.to_string(),
+        }),
         filled_at_ms: f.filled_at_ms,
     }
 }
@@ -69,8 +73,12 @@ fn quote_to_pb(q: &Quote) -> pb::QuoteEvent {
     pb::QuoteEvent {
         symbol: q.symbol.clone(),
         side: q.side as i32,
-        price: Some(pb::Decimal { value: q.price.to_string() }),
-        size: Some(pb::Decimal { value: q.size.to_string() }),
+        price: Some(pb::Decimal {
+            value: q.price.to_string(),
+        }),
+        size: Some(pb::Decimal {
+            value: q.size.to_string(),
+        }),
         issued_at_ms: q.issued_at_ms,
     }
 }
@@ -86,16 +94,26 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
             client_order_id: r.client_order_id,
             user_id: r.user_id,
             symbol: r.symbol,
-            side: pb::Side::try_from(r.side).unwrap_or(pb::Side::Unspecified).into(),
-            order_type: pb::OrderType::try_from(r.r#type).unwrap_or(pb::OrderType::Market).into(),
-            tif: pb::TimeInForce::try_from(r.tif).unwrap_or(pb::TimeInForce::Gtc).into(),
+            side: pb::Side::try_from(r.side)
+                .unwrap_or(pb::Side::Unspecified)
+                .into(),
+            order_type: pb::OrderType::try_from(r.r#type)
+                .unwrap_or(pb::OrderType::Market)
+                .into(),
+            tif: pb::TimeInForce::try_from(r.tif)
+                .unwrap_or(pb::TimeInForce::Gtc)
+                .into(),
             quantity: r
                 .quantity
                 .as_ref()
                 .map(|d| parse_decimal(&d.value).unwrap_or_default())
                 .unwrap_or_default(),
             price: r.price.as_ref().and_then(|d| parse_decimal(&d.value).ok()),
-            venue_hint: if r.venue_hint.is_empty() { None } else { Some(r.venue_hint) },
+            venue_hint: if r.venue_hint.is_empty() {
+                None
+            } else {
+                Some(r.venue_hint)
+            },
             allow_external: r.allow_external,
             correlation_id: r.correlation_id,
         };
@@ -107,8 +125,12 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
             .map(|l| pb::RoutedLeg {
                 venue: l.venue.clone(),
                 venue_id: l.venue_id.clone(),
-                price: Some(pb::Decimal { value: l.price.to_string() }),
-                quantity: Some(pb::Decimal { value: l.quantity.to_string() }),
+                price: Some(pb::Decimal {
+                    value: l.price.to_string(),
+                }),
+                quantity: Some(pb::Decimal {
+                    value: l.quantity.to_string(),
+                }),
                 routed_at_ms: l.routed_at_ms,
             })
             .collect();
@@ -138,7 +160,9 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
         request: Request<pb::UpsertStrategyRequest>,
     ) -> Result<Response<pb::UpsertStrategyResponse>, Status> {
         let r = request.into_inner();
-        let s = r.strategy.ok_or_else(|| Status::invalid_argument("strategy required"))?;
+        let s = r
+            .strategy
+            .ok_or_else(|| Status::invalid_argument("strategy required"))?;
         let spec = StrategySpec {
             id: if s.id.is_empty() {
                 uuid::Uuid::new_v4().to_string()
@@ -172,7 +196,11 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
         request: Request<pb::ListStrategiesRequest>,
     ) -> Result<Response<pb::ListStrategiesResponse>, Status> {
         let r = request.into_inner();
-        let sym = if r.symbol.is_empty() { None } else { Some(r.symbol.as_str()) };
+        let sym = if r.symbol.is_empty() {
+            None
+        } else {
+            Some(r.symbol.as_str())
+        };
         let items: Vec<pb::StrategySpec> = self
             .strategies
             .list(sym)
@@ -185,7 +213,9 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
                 params: s.params.into_iter().collect(),
             })
             .collect();
-        Ok(Response::new(pb::ListStrategiesResponse { strategies: items }))
+        Ok(Response::new(pb::ListStrategiesResponse {
+            strategies: items,
+        }))
     }
 
     async fn disable_strategy(
@@ -202,7 +232,11 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
         let ok = self.strategies.disable(&id);
         Ok(Response::new(pb::DisableStrategyResponse {
             disabled: ok,
-            reason: if ok { String::new() } else { "not found".into() },
+            reason: if ok {
+                String::new()
+            } else {
+                "not found".into()
+            },
         }))
     }
 
@@ -242,7 +276,11 @@ impl pb::trading_engine_server::TradingEngine for TradingService {
         request: Request<pb::StreamQuotesRequest>,
     ) -> Result<Response<Self::StreamQuotesStream>, Status> {
         let r = request.into_inner();
-        let filter = if r.symbol.is_empty() { None } else { Some(r.symbol) };
+        let filter = if r.symbol.is_empty() {
+            None
+        } else {
+            Some(r.symbol)
+        };
         let rx = self.strategies.subscribe_quotes();
         let s = BroadcastStream::new(rx).filter_map(move |item| {
             let filter = filter.clone();

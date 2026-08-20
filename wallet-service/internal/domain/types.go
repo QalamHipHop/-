@@ -13,25 +13,25 @@ import (
 type AccountKind string
 
 const (
-	AccountUser    AccountKind = "user"
-	AccountHot     AccountKind = "hot"
-	AccountCold    AccountKind = "cold"
-	AccountReserve AccountKind = "reserve"
+	AccountUser     AccountKind = "user"
+	AccountHot      AccountKind = "hot"
+	AccountCold     AccountKind = "cold"
+	AccountReserve  AccountKind = "reserve"
 	AccountTreasury AccountKind = "treasury"
-	AccountEscrow  AccountKind = "escrow"
+	AccountEscrow   AccountKind = "escrow"
 )
 
 type Account struct {
-	ID        uuid.UUID
-	OwnerID   *uuid.UUID  // null for internal accounts
-	Kind      AccountKind
-	Symbol    string      // RIAL
-	Balance   int64       // available + pending
-	Available int64       // spendable right now
-	Pending   int64       // locked (orders, withdrawals)
-	Version   int64       // optimistic lock
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        uuid.UUID   `json:"id"`
+	OwnerID   *uuid.UUID  `json:"owner_id,omitempty"` // null for internal
+	Kind      AccountKind `json:"kind"`
+	Symbol    string      `json:"symbol"`           // RIAL
+	Balance   int64       `json:"balance,string"`   // available + pending
+	Available int64       `json:"available,string"` // spendable right now
+	Pending   int64       `json:"pending,string"`   // locked (orders, withdrawals)
+	Version   int64       `json:"version,string"`   // optimistic lock
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
 }
 
 // TransactionType classifies ledger entries.
@@ -46,19 +46,21 @@ const (
 	TxRefund     TransactionType = "refund"
 	TxTransfer   TransactionType = "transfer"
 	TxAdjustment TransactionType = "adjustment"
+	TxReserve    TransactionType = "reserve"
+	TxRelease    TransactionType = "release"
 )
 
 type Transaction struct {
-	ID          uuid.UUID
-	AccountID   uuid.UUID
-	Type        TransactionType
-	Amount      int64       // signed: +credit, -debit
-	BalanceAfter int64
-	Reference   string      // external id (order id, deposit id, etc.)
-	Metadata    map[string]any
-	Actor       string      // user id or "system"
-	IdempotencyKey string
-	CreatedAt   time.Time
+	ID             uuid.UUID       `json:"id"`
+	AccountID      uuid.UUID       `json:"account_id"`
+	Type           TransactionType `json:"type"`
+	Amount         int64           `json:"amount,string"` // signed: +credit, -debit
+	BalanceAfter   int64           `json:"balance_after,string"`
+	Reference      string          `json:"reference"` // external id (order id, deposit id, etc.)
+	Metadata       map[string]any  `json:"metadata"`
+	Actor          string          `json:"actor"` // user id or "system"
+	IdempotencyKey string          `json:"idempotency_key"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 // WithdrawalStatus tracks lifecycle of a withdrawal.
@@ -74,16 +76,16 @@ const (
 )
 
 type Withdrawal struct {
-	ID          uuid.UUID
-	AccountID   uuid.UUID
-	Amount      int64
-	Destination string      // chain address
-	Chain       string      // evm | solana | btc | iban
-	Status      WithdrawalStatus
-	TxHash      string
-	Signers     []string    // collected signatures
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	Amount       int64
+	Destination  string // chain address
+	Chain        string // evm | solana | btc | iban
+	Status       WithdrawalStatus
+	TxHash       string
+	Signers      []string // collected signatures
 	RequiredSigs int
-	Metadata    map[string]any
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Metadata     map[string]any
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }

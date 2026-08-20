@@ -36,9 +36,13 @@ async function main() {
   await vesting.waitForDeployment();
   console.log("VestingWallet     :", await vesting.getAddress());
 
-  // 4. Router (factory placeholder; real AMM uses CREATE2)
+  // 4. Router + factory wiring. RialRouter immutably derives CREATE2 pair
+  // addresses from the real LaunchpadFactory, so predict the factory address
+  // from the deployer's next CREATE nonce before deploying the router.
+  const deploymentNonce = await deployer.getNonce("pending");
+  const predictedFactory = ethers.getCreateAddress({ from: deployer.address, nonce: deploymentNonce + 4 });
   const Router = await ethers.getContractFactory("RialRouter");
-  const router = await Router.deploy(deployer.address, await treasury.getAddress());
+  const router = await Router.deploy(predictedFactory, await treasury.getAddress());
   await router.waitForDeployment();
   console.log("RialRouter        :", await router.getAddress());
 
@@ -54,7 +58,11 @@ async function main() {
     creatorFeeBps
   );
   await factory.waitForDeployment();
-  console.log("LaunchpadFactory  :", await factory.getAddress());
+  const factoryAddress = await factory.getAddress();
+  if (factoryAddress.toLowerCase() !== predictedFactory.toLowerCase()) {
+    throw new Error(`factory address prediction mismatch: expected ${predictedFactory}, got ${factoryAddress}`);
+  }
+  console.log("LaunchpadFactory  :", factoryAddress);
 
   // 6. Timelock (optional admin wrapper; can be wired in later via role transfers)
   const Timelock = await ethers.getContractFactory("Timelock");
@@ -72,7 +80,7 @@ async function main() {
       RialTreasury:     await treasury.getAddress(),
       VestingWallet:    await vesting.getAddress(),
       RialRouter:       await router.getAddress(),
-      LaunchpadFactory: await factory.getAddress(),
+      LaunchpadFactory: factoryAddress,
       Timelock:         await timelock.getAddress(),
     },
     config: {

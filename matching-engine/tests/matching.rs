@@ -1,4 +1,5 @@
-use matching_engine_lib::{Engine, Order, OrderType, Side, TimeInForce};
+use matching_engine::{Engine, Order, Side, TimeInForce};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 fn limit(market: &str, user: &str, side: Side, price: i64, qty: i64) -> Order {
@@ -6,8 +7,8 @@ fn limit(market: &str, user: &str, side: Side, price: i64, qty: i64) -> Order {
         market,
         user,
         side,
-        dec!(price),
-        dec!(qty),
+        Decimal::from(price),
+        Decimal::from(qty),
         TimeInForce::Gtc,
     )
 }
@@ -37,7 +38,14 @@ fn resting_order_partially_fills_next_taker() {
     let m = engine.market("RIAL-USD").unwrap();
     let m = m.lock();
     assert_eq!(m.book.asks.get(&dec!(100)).unwrap().len(), 1);
-    let remaining: rust_decimal::Decimal = m.book.asks.get(&dec!(100)).unwrap().iter().map(|o| o.remaining_quantity).sum();
+    let remaining: rust_decimal::Decimal = m
+        .book
+        .asks
+        .get(&dec!(100))
+        .unwrap()
+        .iter()
+        .map(|o| o.remaining_quantity)
+        .sum();
     assert_eq!(remaining, dec!(3));
 }
 
@@ -69,7 +77,14 @@ fn fok_rejects_when_not_fully_fillable() {
     // book untouched
     let m = engine.market("RIAL-USD").unwrap();
     let m = m.lock();
-    let total: rust_decimal::Decimal = m.book.asks.get(&dec!(100)).unwrap().iter().map(|o| o.remaining_quantity).sum();
+    let total: rust_decimal::Decimal = m
+        .book
+        .asks
+        .get(&dec!(100))
+        .unwrap()
+        .iter()
+        .map(|o| o.remaining_quantity)
+        .sum();
     assert_eq!(total, dec!(3));
 }
 
@@ -85,7 +100,13 @@ fn market_order_sweeps_multiple_levels() {
     assert_eq!(r.trades[0].price, dec!(100));
     assert_eq!(r.trades[1].price, dec!(101));
     assert_eq!(r.trades[2].price, dec!(102));
-    assert_eq!(r.trades.iter().map(|t| t.quantity).sum::<rust_decimal::Decimal>(), dec!(7));
+    assert_eq!(
+        r.trades
+            .iter()
+            .map(|t| t.quantity)
+            .sum::<rust_decimal::Decimal>(),
+        dec!(7)
+    );
 }
 
 #[test]
@@ -124,8 +145,8 @@ fn fees_applied_to_trade() {
 #[test]
 fn bid_ask_priority_correct() {
     let engine = Engine::new(Default::default());
-    engine.submit(limit("M", "a", Side::Sell, 100, 1));
-    engine.submit(limit("M", "b", Side::Sell, 99, 1));
+    engine.submit(limit("M", "a", Side::Sell, 104, 1));
+    engine.submit(limit("M", "b", Side::Sell, 103, 1));
     engine.submit(limit("M", "c", Side::Buy, 101, 1));
     engine.submit(limit("M", "d", Side::Buy, 102, 1));
 
@@ -134,7 +155,7 @@ fn bid_ask_priority_correct() {
     let (bids, asks) = m.book.snapshot(10);
     // best bid = highest, best ask = lowest
     assert_eq!(bids[0].price, dec!(102));
-    assert_eq!(asks[0].price, dec!(99));
+    assert_eq!(asks[0].price, dec!(103));
 }
 
 #[test]

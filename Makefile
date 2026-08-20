@@ -104,16 +104,26 @@ test-int: ## Integration tests
 test-e2e: ## E2E tests
 	$(COMPOSE) -f docker-compose.yml run --rm test e2e
 
+staging-smoke: ## Check staging health/readiness/metrics endpoints
+	@bash scripts/staging-smoke.sh
+
+release-load-smoke: ## Run read-only latency/error-rate smoke test
+	@bash scripts/release-load-smoke.sh
+
+fault-injection: ## Run a guarded staging fault-injection scenario
+	@bash scripts/fault-injection.sh
+
 lint: ## Lint all
 	$(COMPOSE) -f docker-compose.yml run --rm lint
 
 # ----- backups -------------------------------------------------------
 
-backup: ## Run a manual backup
+backup: ## Run a manual encrypted backup
 	@bash infrastructure/backup/backup.sh
 
-restore: ## Restore from a backup (BACKUP_FILE=...)
-	@bash infrastructure/backup/restore.sh $(BACKUP_FILE)
+restore: ## Restore from a backup (BACKUP_FILE=..., CONFIRM_RESTORE=YES)
+	@test -n "$(BACKUP_FILE)" || (echo 'Usage: make restore BACKUP_FILE=timestamp/rial-*.tar.gz.gpg CONFIRM_RESTORE=YES' >&2; exit 1)
+	@BACKUP_FILE="$(BACKUP_FILE)" bash infrastructure/backup/restore.sh
 
 # ----- updates -------------------------------------------------------
 

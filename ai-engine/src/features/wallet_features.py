@@ -63,8 +63,14 @@ def wallet_features(address: str, history: list[dict[str, Any]]) -> dict[str, fl
     dormant_ratio = 0.0
     if timestamps:
         ts_min, ts_max = min(timestamps), max(timestamps)
-        span_ms = max(ts_max - ts_min, 1)
-        first_seen_days = span_ms / 86_400_000
+        # Integrations may provide Unix seconds or Unix milliseconds. Normalize
+        # before deriving age; treating seconds as milliseconds silently made
+        # every wallet appear brand new.
+        span = max(ts_max - ts_min, 1)
+        seconds_per_day = 86_400
+        if max(abs(ts_min), abs(ts_max)) >= 10**11:
+            seconds_per_day *= 1000
+        first_seen_days = span / seconds_per_day
         # Longest gap > 30d = "dormant" period
         sorted_ts = sorted(timestamps)
         gaps = [b - a for a, b in zip(sorted_ts, sorted_ts[1:])]

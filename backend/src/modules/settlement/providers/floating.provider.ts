@@ -1,7 +1,7 @@
 /**
- *  FloatingRateProvider — derives USD-per-RIAL from an on-chain or internal TWAP.
- *  In production this would query a subgraph / oracle; for dev we keep a
- *  monotonic drift around a base rate so the API never returns stale data.
+ *  FloatingRateProvider — reads a trusted on-chain/internal TWAP written by
+ *  the oracle job. It never synthesizes or mutates a market rate itself; an
+ *  absent or stale oracle value is unavailable and must fail closed.
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,11 +11,8 @@ import { RateProvider } from './rate-provider.interface';
 import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.module';
 import { SettlementConfig } from '../../../config/settlement.config';
 
-const KEY = 'rial:rate:floating:base';
-const DRIFT_KEY = 'rial:rate:floating:drift';
-const DRIFT_STEP = 0.0005;        // 0.05% per refresh
-const DRIFT_MAX = 0.05;           // 5% absolute cap
-const REFRESH_SEC = 60;
+const RATE_KEY = 'rial:rate:floating:twap';
+const UPDATED_KEY = 'rial:rate:floating:twap:updated_at';
 
 @Injectable()
 export class FloatingRateProvider implements RateProvider {
@@ -31,19 +28,19 @@ export class FloatingRateProvider implements RateProvider {
     const cfg = this.config.get<SettlementConfig>('settlement')!;
     if (cfg.rateStrategy !== 'floating') return null;
 
-    const base = cfg.rateFixed ?? 1;
     try {
-      const [baseRaw, driftRaw] = await this.redis.mget(KEY, DRIFT_KEY);
-      let drift = driftRaw ? Number(driftRaw) : 0;
-      // Random walk bounded by ±DRIFT_MAX
-      const step = (Math.random() * 2 - 1) * DRIFT_STEP;
-      drift = Math.max(-DRIFT_MAX, Math.min(DRIFT_MAX, drift + step));
-      await this.redis.set(KEY, String(base), 'EX', REFRESH_SEC * 10);
-      await this.redis.set(DRIFT_KEY, String(drift), 'EX', REFRESH_SEC * 10);
-      return base * (1 + drift);
+      const [rateRaw, updatedRaw] = await this.redis.mget(RATE_KEY, UPDATED_KEY);
+      const rate = Number(rateRaw);
+      const updatedAt = Number(updatedRaw);
+      const now = Math.floor(Date.now() / 1000);
+      if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(updatedAt) || now - updatedAt > cfg.rateStaleAfterSec) {
+        this.logger.warn('floating quote unavailable: TWAP is missing or stale');
+        return null;
+      }
+      return rate;
     } catch (e) {
       this.logger.warn(`floating quote failed: ${(e as Error).message}`);
-      return base;
+      return null;
     }
   }
 

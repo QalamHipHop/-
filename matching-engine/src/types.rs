@@ -13,6 +13,7 @@ pub enum Side {
 }
 
 impl Side {
+    #[allow(dead_code)]
     pub fn opposite(self) -> Self {
         match self {
             Side::Buy => Side::Sell,
@@ -81,6 +82,7 @@ pub struct Order {
     pub sequence: u64,
 }
 
+#[allow(dead_code)]
 impl Order {
     pub fn new_limit(
         market: impl Into<String>,
@@ -182,6 +184,7 @@ pub struct Trade {
 }
 
 impl Trade {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         market: impl Into<String>,
         taker: &Order,
@@ -192,11 +195,24 @@ impl Trade {
         maker_fee: Decimal,
         sequence: u64,
     ) -> Self {
-        let (buyer_order_id, seller_order_id, buyer_user_id, seller_user_id, taker_side) = if taker.is_buy() {
-            (taker.id.clone(), maker.id.clone(), taker.user_id.clone(), maker.user_id.clone(), Side::Buy)
-        } else {
-            (maker.id.clone(), taker.id.clone(), maker.user_id.clone(), taker.user_id.clone(), Side::Sell)
-        };
+        let (buyer_order_id, seller_order_id, buyer_user_id, seller_user_id, taker_side) =
+            if taker.is_buy() {
+                (
+                    taker.id.clone(),
+                    maker.id.clone(),
+                    taker.user_id.clone(),
+                    maker.user_id.clone(),
+                    Side::Buy,
+                )
+            } else {
+                (
+                    maker.id.clone(),
+                    taker.id.clone(),
+                    maker.user_id.clone(),
+                    taker.user_id.clone(),
+                    Side::Sell,
+                )
+            };
 
         Self {
             id: Uuid::new_v4().to_string(),
@@ -225,6 +241,7 @@ pub struct PriceLevel {
     pub order_count: u32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct OrderBookSnapshot {
     pub market: String,

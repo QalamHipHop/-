@@ -58,9 +58,9 @@ contract RialRouter is IRouter {
             (uint256 amount0Out, uint256 amount1Out) = input < output
                 ? (uint256(0), amountOut)
                 : (amountOut, uint256(0));
-            // Charge fee to sender.
-            uint256 fee = (amounts[i] * FEE_BPS) / 10000;
-            if (fee > 0) IERC20(input).transferFrom(pair, treasury, fee);
+            // RialAMM applies the 30bp input fee inside its constant-product
+            // invariant. Removing tokens from the pair here would charge twice
+            // and make the computed output fail the AMM invariant.
             IAMM(pair).swap(amount0Out, amount1Out, _to, new bytes(0));
         }
     }

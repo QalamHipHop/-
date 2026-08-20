@@ -1,20 +1,26 @@
 //! Lightweight health/readiness HTTP endpoints on a separate port.
 
 use hyper::body::Incoming;
-use hyper::{Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
+use parking_lot::Mutex;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct HealthState {
     pub ready: Arc<AtomicBool>,
     pub started_at: Arc<Mutex<chrono::DateTime<chrono::Utc>>>,
+}
+
+impl Default for HealthState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HealthState {
@@ -41,7 +47,17 @@ pub async fn serve_health(addr: SocketAddr, state: HealthState) -> anyhow::Resul
                 let state = state.clone();
                 async move {
                     let res = match req.uri().path() {
-                        "/healthz" => Response::new("ok".to_string()),
+                        "/healthz" => {
+                            let uptime = chrono::Utc::now()
+                                .signed_duration_since(*state.started_at.lock())
+                                .num_seconds()
+                                .max(0)
+                                .to_string();
+                            Response::builder()
+                                .header("X-Uptime-Seconds", uptime)
+                                .body("ok".to_string())
+                                .unwrap()
+                        }
                         "/readyz" => {
                             if state.ready.load(Ordering::SeqCst) {
                                 Response::new("ready".to_string())

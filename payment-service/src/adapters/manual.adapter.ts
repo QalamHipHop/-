@@ -13,7 +13,7 @@ import {
   CreateIntentInput,
   PaymentAdapter,
 } from './adapter.interface';
-import { PaymentError } from './types';
+import { Money, PaymentError } from './types';
 
 @Injectable()
 export class ManualAdapter implements PaymentAdapter {
@@ -60,6 +60,13 @@ export class ManualAdapter implements PaymentAdapter {
   async cancel(externalId: string, reason?: string): Promise<AdapterCancelResult> {
     this.log.log(`manual intent cancelled id=${externalId} reason=${reason ?? 'n/a'}`);
     return { cancelled: true, reason: reason ?? 'manual cancel' };
+  }
+
+  async refund(externalId: string, amount: Money, reason: string, idempotencyKey: string) {
+    if (amount.amountMinor <= 0n) throw new PaymentError('INVALID_REFUND_AMOUNT', 'refund amount must be positive');
+    const refundId = `manual_refund_${createHash('sha256').update(`${externalId}:${idempotencyKey}`).digest('hex').slice(0, 32)}`;
+    this.log.log(`manual refund requested external=${externalId} amount=${amount.amountMinor} ${amount.currency} reason=${reason} id=${refundId}`);
+    return { externalId: refundId, status: 'processing' as const };
   }
 
   verifyWebhookSignature(): boolean {

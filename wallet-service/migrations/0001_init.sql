@@ -46,3 +46,8 @@ CREATE TABLE IF NOT EXISTS wallet.withdrawals (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS wd_status ON wallet.withdrawals (status, created_at DESC);
+-- Author: QalamHipHop
+-- Idempotency belongs to the withdrawal aggregate, not only to JSON metadata.
+ALTER TABLE wallet.withdrawals ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS wd_idem ON wallet.withdrawals (account_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;

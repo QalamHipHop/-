@@ -42,6 +42,8 @@ export interface AppConfig {
   defaultAdapter: string;
   defaultFiat: string;
   internalToken: string;
+  walletBaseUrl?: string;
+  walletInternalToken?: string;
   databaseUrl: string;
   corsOrigins: string[];
   logLevel: string;
@@ -79,12 +81,20 @@ function boolEnv(name: string, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(v.toLowerCase());
 }
 
-export const configuration = (): AppConfig => ({
+export const configuration = (): AppConfig => {
+  const nodeEnv = process.env['NODE_ENV'] ?? 'development';
+  const internalToken = process.env['PAYMENT_INTERNAL_TOKEN'] ?? '';
+  if (nodeEnv === 'production' && (internalToken.length < 32 || internalToken === 'change-me')) {
+    throw new Error('PAYMENT_INTERNAL_TOKEN must be a unique secret of at least 32 characters in production');
+  }
+  return {
   httpPort: Number(process.env['PAYMENT_HTTP_PORT'] ?? 50055),
   grpcPort: Number(process.env['PAYMENT_GRPC_PORT'] ?? 50056),
   defaultAdapter: process.env['PAYMENT_DEFAULT_ADAPTER'] ?? 'manual',
   defaultFiat: process.env['PAYMENT_DEFAULT_FIAT'] ?? 'USD',
-  internalToken: process.env['PAYMENT_INTERNAL_TOKEN'] ?? 'change-me',
+  internalToken,
+  walletBaseUrl: (process.env['PAYMENT_WALLET_BASE_URL'] ?? 'http://wallet-service:50053').replace(/\/$/, ''),
+  walletInternalToken: process.env['WALLET_INTERNAL_TOKEN'] ?? '',
   databaseUrl: process.env['PAYMENT_DATABASE_URL'] ?? process.env['DATABASE_URL'] ?? '',
   corsOrigins: (process.env['PAYMENT_CORS_ORIGINS'] ?? '*')
     .split(',')
@@ -124,4 +134,5 @@ export const configuration = (): AppConfig => ({
       ipnSecret: process.env['NOWPAYMENTS_IPN_SECRET'] ?? '',
     },
   },
-});
+  };
+};

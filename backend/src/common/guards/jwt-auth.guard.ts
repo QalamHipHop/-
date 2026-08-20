@@ -11,6 +11,7 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { GqlExecutionContext } from '@nestjs/graphql';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { FastifyRequest } from 'fastify';
@@ -42,9 +43,12 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    if (ctx.getType<string>() !== 'http' && ctx.getType<string>() !== 'ws') return true;
+    const contextType = ctx.getType<string>();
+    if (contextType !== 'http' && contextType !== 'ws' && contextType !== 'graphql') return true;
 
-    const req = ctx.switchToHttp().getRequest<FastifyRequest & { user?: AuthenticatedUser }>();
+    const req = contextType === 'graphql'
+      ? GqlExecutionContext.create(ctx).getContext<{ req: FastifyRequest & { user?: AuthenticatedUser } }>().req
+      : ctx.switchToHttp().getRequest<FastifyRequest & { user?: AuthenticatedUser }>();
 
     // 1) Bearer header
     const auth = req.headers.authorization;

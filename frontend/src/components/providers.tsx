@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes';
 import { useState, type ReactNode } from 'react';
 import { AuthProvider } from '@/components/auth/auth-provider';
 import { ToastProvider } from '@/components/ui/toast-provider';
+import { LanguageProvider } from '@/lib/i18n';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -28,9 +29,11 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-        <AuthProvider>
-          <ToastProvider>{children}</ToastProvider>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </AuthProvider>
+        </LanguageProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

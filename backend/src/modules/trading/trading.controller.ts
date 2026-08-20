@@ -11,7 +11,7 @@
  *  - GET  /api/trading/orders
  */
 import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard, Public } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { TradingService } from './trading.service';
@@ -42,6 +42,12 @@ class PlaceOrderDto {
 @Controller('trading')
 export class TradingController {
   constructor(private readonly trading: TradingService) {}
+
+  @Public()
+  @Get('overview')
+  async overview() {
+    return this.trading.getOverviewStats();
+  }
 
   @Public()
   @Get('markets')

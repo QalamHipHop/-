@@ -18,7 +18,9 @@ pub struct ServerCfg {
     #[serde(default = "default_shutdown")]
     pub shutdown_grace_seconds: u64,
 }
-fn default_shutdown() -> u64 { 15 }
+fn default_shutdown() -> u64 {
+    15
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct RoutingCfg {
@@ -33,9 +35,15 @@ pub struct RoutingCfg {
     #[serde(default = "default_max_notional")]
     pub max_order_notional: String,
 }
-fn default_max_legs() -> usize { 1 }
-fn default_slippage() -> i64 { 50 }
-fn default_max_notional() -> String { "1000000".into() }
+fn default_max_legs() -> usize {
+    1
+}
+fn default_slippage() -> i64 {
+    50
+}
+fn default_max_notional() -> String {
+    "1000000".into()
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct MarketMakingCfg {
@@ -52,12 +60,24 @@ pub struct MarketMakingCfg {
     #[serde(default = "default_max_open")]
     pub max_open_orders_per_symbol: usize,
 }
-fn default_enabled() -> bool { true }
-fn default_spread() -> i64 { 30 }
-fn default_size() -> String { "1000".into() }
-fn default_skew() -> String { "0.5".into() }
-fn default_refresh() -> u64 { 500 }
-fn default_max_open() -> usize { 20 }
+fn default_enabled() -> bool {
+    true
+}
+fn default_spread() -> i64 {
+    30
+}
+fn default_size() -> String {
+    "1000".into()
+}
+fn default_skew() -> String {
+    "0.5".into()
+}
+fn default_refresh() -> u64 {
+    500
+}
+fn default_max_open() -> usize {
+    20
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct RiskCfg {
@@ -70,9 +90,15 @@ pub struct RiskCfg {
     #[serde(default)]
     pub kill_switch: bool,
 }
-fn default_max_notional2() -> String { "1000000".into() }
-fn default_max_pos() -> String { "100000".into() }
-fn default_max_loss() -> String { "50000".into() }
+fn default_max_notional2() -> String {
+    "1000000".into()
+}
+fn default_max_pos() -> String {
+    "100000".into()
+}
+fn default_max_loss() -> String {
+    "50000".into()
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct LoggingCfg {
@@ -81,8 +107,12 @@ pub struct LoggingCfg {
     #[serde(default = "default_log_format")]
     pub format: String,
 }
-fn default_log_level() -> String { "info".into() }
-fn default_log_format() -> String { "json".into() }
+fn default_log_level() -> String {
+    "info".into()
+}
+fn default_log_format() -> String {
+    "json".into()
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
@@ -95,12 +125,12 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn load() -> anyhow::Result<Self> {
-        let path = std::env::var("TRADING_CONFIG")
-            .unwrap_or_else(|_| "config/trading.yaml".to_string());
+        let path =
+            std::env::var("TRADING_CONFIG").unwrap_or_else(|_| "config/trading.yaml".to_string());
         let raw = std::fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("read config {path}: {e}"))?;
-        let cfg: AppConfig = serde_yaml::from_str(&raw)
-            .map_err(|e| anyhow::anyhow!("parse config {path}: {e}"))?;
+        let cfg: AppConfig =
+            serde_yaml::from_str(&raw).map_err(|e| anyhow::anyhow!("parse config {path}: {e}"))?;
         Ok(cfg)
     }
 

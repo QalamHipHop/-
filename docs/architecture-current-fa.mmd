@@ -1,0 +1,38 @@
+flowchart LR
+  U[کاربر] --> FE[Frontend Next.js]
+  FE --> GW[Backend API Gateway NestJS]
+  GW --> AUTH[Auth / Session / MFA]
+  GW --> WAL[Wallet Service Go]
+  GW --> PAY[Payment Service NestJS]
+  GW --> TRD[Trading Facade]
+  GW --> LP[Launchpad API]
+
+  PAY --> PSP[PSP / Bank / On-ramp]
+  PSP --> WH[Webhook Verification]
+  WH --> PAYDB[(Payments DB)]
+  PAY --> WAL
+
+  TRD --> RES[Escrow Lock]
+  TRD --> ME[Matching Engine Rust]
+  ME --> OB[(Order Book + WAL)]
+  ME --> STREAM[Book / Trade Streams]
+  ME --> TRD
+  TRD --> SET[Trade Settlement]
+  SET --> WAL
+
+  LP --> RISK[Risk AI]
+  LP --> CURVE[Bonding Curve]
+  LP --> WAL
+  LP --> EVM[Smart Contracts]
+
+  WAL --> LEDGER[(Authoritative Ledger)]
+  WAL --> CUST[Vault/KMS/HSM Custody]
+  WAL --> OUTBOX[Outbox / Audit]
+
+  GW --> PG[(PostgreSQL)]
+  PAY --> PG
+  LP --> PG
+  ME --> PG
+  OUTBOX --> BUS[NATS / Kafka]
+  BUS --> ANA[Analytics / ClickHouse]
+  STREAM --> FE

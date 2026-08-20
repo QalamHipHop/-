@@ -50,6 +50,12 @@ export interface Trade {
   amount_minor: string;
   fee_buyer_minor: string;
   fee_seller_minor: string;
+  settlement_status?: 'pending' | 'processing' | 'succeeded' | 'failed';
+  settlement_attempts?: number;
+  settlement_next_attempt_at?: Date;
+  settlement_last_error?: string | null;
+  settlement_tx_id?: string | null;
+  settled_at?: Date | null;
   created_at: Date;
 }
 

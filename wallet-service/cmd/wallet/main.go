@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -96,10 +97,22 @@ func main() {
 	defer audit.Close()
 
 	// --- Custody (HSM abstraction) ---
-	cust := custody.New(cfg.Custody)
+	// Author: QalamHipHop
+	var cust custody.Signer
+	if strings.EqualFold(cfg.Custody.Mode, "vault") {
+		cust, err = custody.NewVault(cfg.Custody.VaultAddr, cfg.Custody.VaultToken)
+	} else {
+		cust, err = custody.New(cfg.Custody.Mode)
+	}
+	if err != nil {
+		log.Fatal().Err(err).Msg("custody initialization failed")
+	}
 
 	// --- Ledger service ---
 	ledgerSvc := ledger.NewService(pg.Pool, rds, publisher, audit, cust, cfg.Settlement)
+	outboxRelay := event.NewOutboxRelay(pg.Pool, publisher)
+	outboxRelay.Start()
+	defer outboxRelay.Close()
 
 	// --- HTTP server ---
 	gin.SetMode(gin.ReleaseMode)

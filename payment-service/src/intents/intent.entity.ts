@@ -20,6 +20,7 @@ export interface PaymentIntent {
   userId: string;
   adapter: string;
   status: IntentStatus;
+  settlementStatus?: 'not_required' | 'pending' | 'succeeded' | 'failed';
   amount: Money;
   settledAmount?: Money;
   reference: string;
@@ -41,6 +42,7 @@ export interface IntentJSON {
   userId: string;
   adapter: string;
   status: IntentStatus;
+  settlementStatus?: 'not_required' | 'pending' | 'succeeded' | 'failed';
   amount: MoneyJSON;
   settledAmount?: MoneyJSON;
   reference: string;
@@ -63,6 +65,7 @@ export function intentToJSON(i: PaymentIntent): IntentJSON {
     userId: i.userId,
     adapter: i.adapter,
     status: i.status,
+    settlementStatus: i.settlementStatus,
     amount: toJSON(i.amount),
     settledAmount: i.settledAmount ? toJSON(i.settledAmount) : undefined,
     reference: i.reference,

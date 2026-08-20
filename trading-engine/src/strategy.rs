@@ -4,7 +4,6 @@
 //! Strategies are stored in a concurrent map and executed by a small
 //! tokio task that wakes on a fixed interval (or sooner when nudged).
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,12 +12,12 @@ use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use tokio::sync::Notify;
-use tracing::{debug, error, info, warn};
-use uuid::Uuid;
+use tracing::{debug, info};
 
 use crate::decimal::{apply_bps, apply_bps_down};
 use crate::types::parse_decimal;
-use crate::types::{now_ms, Quote, Side, StrategyKind, StrategySpec};
+use crate::types::{now_ms, Quote, Side};
+pub use crate::types::{StrategyKind, StrategySpec};
 
 #[derive(Debug, Clone)]
 pub struct MarketMakingConfig {
@@ -128,7 +127,10 @@ impl StrategyEngine {
     }
 
     pub fn count_active(&self) -> usize {
-        self.strategies.iter().filter(|e| e.value().spec.enabled).count()
+        self.strategies
+            .iter()
+            .filter(|e| e.value().spec.enabled)
+            .count()
     }
 
     /// Update inventory when a fill arrives.
@@ -164,10 +166,8 @@ impl StrategyEngine {
     }
 
     pub fn set_reference(&self, symbol: &str, bid: Decimal, ask: Decimal) {
-        self.refs.insert(
-            symbol.to_string(),
-            ReferencePrice { bid, ask },
-        );
+        self.refs
+            .insert(symbol.to_string(), ReferencePrice { bid, ask });
     }
 
     pub fn reference(&self, symbol: &str) -> Option<ReferencePrice> {

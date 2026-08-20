@@ -1,14 +1,14 @@
 //! Prometheus metrics endpoint.
 
 use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
 
 pub async fn serve_metrics(addr: SocketAddr, handle: PrometheusHandle) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -20,9 +20,7 @@ pub async fn serve_metrics(addr: SocketAddr, handle: PrometheusHandle) -> anyhow
         tokio::spawn(async move {
             let svc = service_fn(move |_req: Request<Incoming>| {
                 let body = handle.render();
-                async move {
-                    Ok::<_, Infallible>(Response::new(body))
-                }
+                async move { Ok::<_, Infallible>(Response::new(body)) }
             });
             if let Err(e) = http1::Builder::new().serve_connection(io, svc).await {
                 tracing::warn!("metrics conn error: {e}");

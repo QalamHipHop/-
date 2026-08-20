@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -13,12 +13,54 @@ import { RecentTrades, type Trade } from '@/components/market/recent-trades';
 import { TradeForm } from '@/components/market/trade-form';
 import { BondingCurveMeter } from '@/components/market/bonding-curve-meter';
 import { api } from '@/lib/api';
+import { useAuth } from '@/components/auth/auth-provider';
 import { getWsClient } from '@/lib/ws';
 import { ArrowLeft, Star, Share2 } from 'lucide-react';
 import Link from 'next/link';
 import { formatNumber, formatPercent } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n';
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+
+interface DepthPayload {
+  symbol?: string;
+  market_id?: string;
+  bids?: Array<{ price?: number | string; price_minor?: number | string; size?: number | string; amount_minor?: number | string; total?: number | string }>;
+  asks?: Array<{ price?: number | string; price_minor?: number | string; size?: number | string; amount_minor?: number | string; total?: number | string }>;
+}
+
+const FIXED_POINT_DECIMALS = 8;
+
+function displayAmount(value: number | string | undefined, isMinor: boolean): number {
+  if (value === undefined || value === null || value === '') return 0;
+  const raw = String(value);
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return NaN;
+  return isMinor ? numeric / 10 ** FIXED_POINT_DECIMALS : numeric;
+}
+
+function normalizeDepth(levels: DepthPayload['bids']): OrderBookLevel[] {
+  return (levels ?? []).map((level) => ({
+    // Backend authoritative contracts expose *_minor as fixed-point strings.
+    // Convert only at the presentation boundary; order submission remains string-based.
+    price: displayAmount(level.price ?? level.price_minor, level.price === undefined),
+    size: displayAmount(level.size ?? level.amount_minor, level.size === undefined),
+    total: level.total === undefined ? undefined : displayAmount(level.total, false),
+  })).filter((level) => Number.isFinite(level.price) && Number.isFinite(level.size));
+}
+
+interface UserOrder {
+  id: string;
+  marketId?: string;
+  market_id?: string;
+  side: 'buy' | 'sell';
+  type: string;
+  amountMinor?: string;
+  amount_minor?: string;
+  priceMinor?: string;
+  price_minor?: string;
+  status: string;
+}
 
 interface TokenMeta {
   id: string;
@@ -48,36 +90,47 @@ export default function TradePairPage() {
   const [orderBook, setOrderBook] = useState<{ bids: OrderBookLevel[]; asks: OrderBookLevel[] }>({ bids: [], asks: [] });
   const [trades, setTrades] = useState<Trade[]>([]);
   const [lastPrice, setLastPrice] = useState(0);
+  const { user } = useAuth();
+  const { t } = useI18n();
 
-  const { data: meta, isLoading: metaLoading } = useQuery({
+  const { data: meta, isLoading: metaLoading, isError: metaError } = useQuery({
     queryKey: ['token-meta', symbol],
-    queryFn: async () => {
-      try {
-        return await api.get<TokenMeta>(`/api/tokens/${symbol}`);
-      } catch {
-        return FALLBACK_META(symbol);
-      }
-    },
+    queryFn: () => api.get<TokenMeta>(`/api/tokens/${symbol}`),
   });
 
-  const { data: candles } = useQuery({
-    queryKey: ['candles', symbol, tf],
-    queryFn: async () => {
-      try {
-        return await api.get<Candle[]>(`/api/tokens/${symbol}/candles`, { query: { tf, limit: 200 } });
-      } catch {
-        return generateCandles(tf);
-      }
-    },
+  const { data: initialDepth } = useQuery({
+    queryKey: ['orderbook', symbol],
+    queryFn: () => api.get<DepthPayload>(`/api/trading/markets/${symbol}/orderbook`, { query: { depth: 20 } }),
     refetchInterval: 30_000,
   });
+
+  const { data: userOrders, isLoading: ordersLoading, isError: ordersError } = useQuery({
+    queryKey: ['user-orders', symbol],
+    queryFn: () => api.get<UserOrder[]>('/api/trading/orders', { query: { marketId: symbol, limit: 50 } }),
+    enabled: !!user,
+  });
+
+  const { data: candles, isError: candlesError } = useQuery({
+    queryKey: ['candles', symbol, tf],
+    queryFn: () => api.get<Candle[]>(`/api/tokens/${symbol}/candles`, { query: { tf, limit: 200 } }),
+    refetchInterval: 30_000,
+  });
+
+  useEffect(() => {
+    if (initialDepth) {
+      setOrderBook({ bids: normalizeDepth(initialDepth.bids), asks: normalizeDepth(initialDepth.asks) });
+    }
+  }, [initialDepth]);
 
   // WebSocket live data
   useEffect(() => {
     const ws = getWsClient();
     const offDepth = ws.on('depth', (payload) => {
-      const p = payload as { symbol?: string; bids?: OrderBookLevel[]; asks?: OrderBookLevel[] };
-      if (p.symbol === symbol && p.bids && p.asks) setOrderBook({ bids: p.bids, asks: p.asks });
+      const p = payload as DepthPayload;
+      const matchesMarket = p.symbol === symbol || p.market_id === symbol;
+      if (matchesMarket && p.bids && p.asks) {
+        setOrderBook({ bids: normalizeDepth(p.bids), asks: normalizeDepth(p.asks) });
+      }
     });
     const offTrade = ws.on('trade', (payload) => {
       const p = payload as { symbol?: string; trade?: Trade };
@@ -107,6 +160,8 @@ export default function TradePairPage() {
         </Button>
         {metaLoading ? (
           <Skeleton className="h-10 w-48" />
+        ) : metaError || !meta ? (
+          <UnavailableNotice label={`Market data for ${symbol} is unavailable`} />
         ) : (
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-emerald-300 flex items-center justify-center text-primary-foreground font-bold">
@@ -124,10 +179,10 @@ export default function TradePairPage() {
         )}
         <div className="flex-1" />
         <div className="hidden md:flex gap-6 text-right">
-          <Stat label="Price" value={lastPrice ? `$${lastPrice.toFixed(pricePrecision)}` : '—'} positive={changePositive} />
+          <Stat label={t('price')} value={lastPrice ? `${lastPrice.toFixed(pricePrecision)} ﷼` : '—'} positive={changePositive} />
           <Stat label="24h Change" value={formatPercent(meta?.change24h || 0)} positive={changePositive} />
-          <Stat label="24h Volume" value={`$${formatNumber(meta?.volume24h || 0)}`} />
-          <Stat label="Market Cap" value={`$${formatNumber(meta?.marketCap || 0)}`} />
+          <Stat label="24h Volume" value={`${formatNumber(meta?.volume24h || 0)} ﷼`} />
+          <Stat label="Market Cap" value={`${formatNumber(meta?.marketCap || 0)} ﷼`} />
         </div>
       </div>
 
@@ -144,15 +199,15 @@ export default function TradePairPage() {
               </div>
             </CardHeader>
             <CardContent className="p-2">
-              {candles ? <CandlestickChart data={candles} height={420} /> : <Skeleton className="h-[420px] w-full" />}
+              {candles ? <CandlestickChart data={candles} height={420} /> : candlesError ? <UnavailableNotice label="Candles are temporarily unavailable" /> : <Skeleton className="h-[420px] w-full" />}
             </CardContent>
           </Card>
 
-          {meta && !meta.graduated && (
+          {meta && !meta.graduated && lastPrice > 0 && (
             <BondingCurveMeter
               progress={meta.bondingProgress}
-              currentPrice={lastPrice || 0.001}
-              nextThreshold={(lastPrice || 0.001) * 1.05}
+              currentPrice={lastPrice}
+              nextThreshold={lastPrice * 1.05}
               raised={meta.raised}
               target={meta.target}
               graduated={meta.graduated}
@@ -161,13 +216,13 @@ export default function TradePairPage() {
 
           <Tabs defaultValue="trades" className="w-full">
             <TabsList>
-              <TabsTrigger value="trades">Trades</TabsTrigger>
-              <TabsTrigger value="orders">My orders</TabsTrigger>
-              <TabsTrigger value="holders">Holders</TabsTrigger>
-              <TabsTrigger value="info">Info</TabsTrigger>
+              <TabsTrigger value="trades">{t('trades')}</TabsTrigger>
+              <TabsTrigger value="orders">{t('myOrders')}</TabsTrigger>
+              <TabsTrigger value="holders">{t('holders')}</TabsTrigger>
+              <TabsTrigger value="info">{t('info')}</TabsTrigger>
             </TabsList>
             <TabsContent value="trades" className="mt-3"><RecentTrades symbol={symbol} initial={trades} /></TabsContent>
-            <TabsContent value="orders" className="mt-3"><Card><CardContent className="p-6 text-center text-muted-foreground text-sm">Sign in to view your orders.</CardContent></Card></TabsContent>
+            <TabsContent value="orders" className="mt-3"><MarketOrders orders={userOrders || []} loading={ordersLoading} error={ordersError} signedIn={!!user} /></TabsContent>
             <TabsContent value="holders" className="mt-3"><HoldersList symbol={symbol} /></TabsContent>
             <TabsContent value="info" className="mt-3"><TokenInfo meta={meta} loading={metaLoading} /></TabsContent>
           </Tabs>
@@ -186,11 +241,19 @@ export default function TradePairPage() {
         </div>
 
         <div className="order-2 lg:order-3">
-          <TradeForm symbol={symbol} side={side} onSideChange={setSide} marketPrice={lastPrice || 0.001} />
+          <TradeForm symbol={symbol} side={side} onSideChange={setSide} marketPrice={lastPrice} />
         </div>
       </div>
     </div>
   );
+}
+
+function MarketOrders({ orders, loading, error, signedIn }: { orders: UserOrder[]; loading: boolean; error: boolean; signedIn: boolean }) {
+  if (!signedIn) return <Card><CardContent className="p-6 text-center text-muted-foreground text-sm">Sign in to view your orders.</CardContent></Card>;
+  if (loading) return <Skeleton className="h-40" />;
+  if (error) return <UnavailableNotice label="Your orders are temporarily unavailable" />;
+  if (orders.length === 0) return <Card><CardContent className="p-6 text-center text-muted-foreground text-sm">No orders for this market.</CardContent></Card>;
+  return <Card><CardContent className="p-0 divide-y">{orders.map((order) => <div key={order.id} className="flex items-center justify-between px-4 py-3 text-sm"><div><span className={order.side === 'buy' ? 'text-success' : 'text-destructive'}>{order.side.toUpperCase()}</span> <span>{order.type}</span><div className="text-xs text-muted-foreground">Amount {order.amountMinor || order.amount_minor || '—'} · Price {order.priceMinor || order.price_minor || 'market'}</div></div><span className="text-xs text-muted-foreground">{order.status}</span></div>)}</CardContent></Card>;
 }
 
 function Stat({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
@@ -205,22 +268,13 @@ function Stat({ label, value, positive }: { label: string; value: string; positi
 }
 
 function HoldersList({ symbol }: { symbol: string }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['holders', symbol],
-    queryFn: async () => {
-      try {
-        return await api.get<Array<{ address: string; balance: number; pct: number }>>(`/api/tokens/${symbol}/holders`);
-      } catch {
-        return Array.from({ length: 10 }).map((_, i) => ({
-          address: `0x${(Math.random() * 1e16).toString(16).padStart(40, '0').slice(0, 40)}`,
-          balance: 100000 - i * 8500,
-          pct: 12.4 - i * 1.1,
-        }));
-      }
-    },
+    queryFn: () => api.get<Array<{ address: string; balance: number; pct: number }>>(`/api/tokens/${symbol}/holders`),
   });
 
   if (isLoading) return <Skeleton className="h-64" />;
+  if (isError || !data) return <UnavailableNotice label="Holder data is temporarily unavailable" />;
   return (
     <Card>
       <CardContent className="p-0">
@@ -272,41 +326,6 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FALLBACK_META(symbol: string): TokenMeta {
-  return {
-    id: symbol,
-    symbol,
-    name: symbol,
-    description: 'Demo token for the Rial trading UI.',
-    graduated: false,
-    bondingProgress: 64.2,
-    raised: 64200,
-    target: 100000,
-    marketCap: 1_240_000,
-    volume24h: 234_000,
-    change24h: 4.7,
-    holders: 1284,
-    riskScore: 18,
-    creator: '0x0000000000000000000000000000000000000000',
-    createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
-  };
-}
-
-function generateCandles(tf: string): Candle[] {
-  const count = 120;
-  const step = tf === '1m' ? 60 : tf === '5m' ? 300 : tf === '15m' ? 900 : tf === '1h' ? 3600 : tf === '4h' ? 14400 : 86400;
-  const candles: Candle[] = [];
-  let price = 0.4;
-  const now = Math.floor(Date.now() / 1000);
-  for (let i = count - 1; i >= 0; i--) {
-    const t = now - i * step;
-    const open = price;
-    const change = (Math.random() - 0.48) * 0.04 * price;
-    const close = Math.max(0.0001, open + change);
-    const high = Math.max(open, close) * (1 + Math.random() * 0.02);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.02);
-    candles.push({ time: t as never, open, high, low, close });
-    price = close;
-  }
-  return candles;
+function UnavailableNotice({ label }: { label: string }) {
+  return <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">{label}. No synthetic data is shown.</CardContent></Card>;
 }

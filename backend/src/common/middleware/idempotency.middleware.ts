@@ -22,7 +22,7 @@ export class IdempotencyMiddleware implements NestMiddleware {
     const key = req.headers['x-idempotency-key'] as string | undefined;
     if (!key) return next();
 
-    if (!/^[a-zA-Z0-9_\-]{8,128}$/.test(key)) {
+    if (!/^[a-zA-Z0-9_-]{8,128}$/.test(key)) {
       throw new HttpException(
         { code: 'IDEMPOTENCY_KEY_INVALID', message: 'Idempotency-Key must be 8-128 chars [a-zA-Z0-9_-]' },
         HttpStatus.BAD_REQUEST,

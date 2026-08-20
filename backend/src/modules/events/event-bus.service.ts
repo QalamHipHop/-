@@ -4,7 +4,9 @@
  *  when NATS is not reachable (dev/single-node).
  */
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { JetStreamClient, JetStreamSubscription, StringCodec } from 'nats';
+import { ConfigService } from '@nestjs/config';
+import { consumerOpts, JetStreamClient, JetStreamSubscription, StringCodec } from 'nats';
+import { NatsConfig } from '../../config/nats.config';
 import { NATS_JETSTREAM } from '../../infrastructure/nats/nats.module';
 
 type Handler = (payload: unknown, raw: unknown) => void | Promise<void>;
@@ -17,7 +19,10 @@ export class EventBusService implements OnModuleInit {
   private readonly remoteSubs = new Map<string, JetStreamSubscription>();
   private jsAvailable = true;
 
-  constructor(@Inject(NATS_JETSTREAM) private readonly js: JetStreamClient | null) {}
+  constructor(
+    @Inject(NATS_JETSTREAM) private readonly js: JetStreamClient | null,
+    private readonly config: ConfigService,
+  ) {}
 
   async onModuleInit() {
     if (!this.js) { this.jsAvailable = false; return; }
@@ -36,12 +41,29 @@ export class EventBusService implements OnModuleInit {
     }
   }
 
+  async publishDurable(subject: string, payload: unknown, msgId: string): Promise<void> {
+    if (!this.jsAvailable || !this.js) throw new Error('NATS JetStream unavailable');
+    const body = this.sc.encode(JSON.stringify({ ts: new Date().toISOString(), payload }));
+    await this.js.publish(subject, body, { msgID: msgId });
+    this.fanoutLocal(subject, payload);
+  }
+
   async subscribe(subject: string, handler: Handler): Promise<() => void> {
     if (!this.localSubs.has(subject)) this.localSubs.set(subject, new Set());
     this.localSubs.get(subject)!.add(handler);
     if (this.jsAvailable && this.js && !this.remoteSubs.has(subject)) {
       try {
-        const sub = await this.js.subscribe(subject, {});
+        const nats = this.config.get<NatsConfig>('nats');
+        const durable = `${nats?.consumerPrefix ?? 'rial-backend'}-${subject.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 80)}`;
+        const opts = consumerOpts()
+          .bindStream(nats?.stream ?? 'rial-events')
+          .durable(durable)
+          .ackExplicit()
+          .manualAck()
+          .deliverAll()
+          .ackWait(30_000)
+          .maxDeliver(-1);
+        const sub = await this.js.subscribe(subject, opts);
         this.remoteSubs.set(subject, sub);
         (async () => {
           for await (const msg of sub) {

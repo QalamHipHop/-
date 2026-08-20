@@ -7,6 +7,7 @@ import { Request } from 'express';
 import { AdapterRegistry } from '../adapters/adapter.registry';
 import { IntentsService } from '../intents/intents.service';
 import { IntentJSON, IntentStatus, intentToJSON } from '../intents/intent.entity';
+import { IntentStore } from '../intents/intent.store';
 import { PaymentError } from '../adapters/types';
 
 interface WebhookBody {
@@ -19,6 +20,7 @@ export class WebhooksController {
   constructor(
     private readonly registry: AdapterRegistry,
     private readonly intents: IntentsService,
+    private readonly store: IntentStore,
   ) {}
 
   @Post(':adapter')
@@ -42,10 +44,27 @@ export class WebhooksController {
 
     const a = this.registry.get(adapter);
     try {
-      const verify = await a.parseWebhook(raw, headers, signature);
+      const parsed = await a.parseWebhook(raw, headers, signature);
+      // ZarinPal callbacks are unsigned by design; Status=OK is only a browser
+      // redirect signal. The payment API verification is the authority for credit.
+      const verify = adapter === 'zarinpal' ? await a.verify(parsed.externalId) : parsed;
+      const eventType = headers['x-event-type'] ?? headers['x-webhook-event'] ?? verify.status;
+      const inserted = await this.store.recordWebhookEvent({
+        id: `wh_${adapter}_${verify.externalId}_${eventType}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120),
+        adapter,
+        externalId: verify.externalId,
+        type: eventType,
+        payload: { status: verify.status, settledAmount: verify.settledAmount, failureReason: verify.failureReason },
+      });
+      if (!inserted) {
+        if (await this.store.isWebhookProcessed(adapter, verify.externalId, eventType) || !(await this.store.claimWebhookEvent(adapter, verify.externalId, eventType))) {
+          const existing = await this.intents.findByExternalId(adapter, verify.externalId);
+          return { ok: true, intent: existing ? intentToJSON(existing) : null };
+        }
+      }
       const existing = await this.intents.findByExternalId(adapter, verify.externalId);
       if (!existing) {
-        // No intent — accept and ignore (provider may send test events).
+        await this.store.markWebhookProcessed(adapter, verify.externalId, eventType);
         return { ok: true, intent: null };
       }
       const status = this.mapStatus(verify.status);
@@ -55,6 +74,7 @@ export class WebhooksController {
         verify.settledAmount,
         verify.failureReason,
       );
+      await this.store.markWebhookProcessed(adapter, verify.externalId, eventType);
       return { ok: true, intent: updated };
     } catch (e) {
       if (e instanceof PaymentError) {

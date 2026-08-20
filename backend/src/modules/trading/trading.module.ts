@@ -11,6 +11,7 @@ import { TradingService } from './trading.service';
 import { TradingRepository } from './trading.repository';
 import { TradingController } from './trading.controller';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { TradeSettlementRecoveryWorker } from './trade-settlement-recovery.worker';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     WalletModule,
   ],
   controllers: [TradingController],
-  providers: [TradingService, TradingRepository, { provide: APP_GUARD, useClass: RolesGuard }],
+  providers: [TradingService, TradingRepository, TradeSettlementRecoveryWorker, { provide: APP_GUARD, useClass: RolesGuard }],
   exports: [TradingService, TradingRepository],
 })
 export class TradingModule {}

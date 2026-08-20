@@ -29,8 +29,8 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, ApiEnvelope<T>
     if (
       req.url?.startsWith('/docs') ||
       req.url?.startsWith('/graphql') ||
-      req.url?.startsWith('/healthz') ||
-      req.url?.startsWith('/readyz') ||
+      (req.url?.startsWith('/healthz') || req.url?.startsWith('/v1/healthz')) ||
+      (req.url?.startsWith('/readyz') || req.url?.startsWith('/v1/readyz')) ||
       req.url?.startsWith('/metrics')
     ) {
       return next.handle();

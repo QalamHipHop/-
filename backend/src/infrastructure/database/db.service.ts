@@ -56,8 +56,8 @@ export class DbService {
     const payloadJson = JSON.stringify(ev.payload);
     const payloadHash = createHash('sha256').update(payloadJson).digest();
     await client.query(
-      `INSERT INTO shared.outbox (id, aggregate, aggregate_id, event_type, payload, payload_hash, prev_hash)
-       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
+      `INSERT INTO shared.outbox (id, aggregate, aggregate_id, event_type, payload, payload_hash, prev_hash, source_service)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,'backend')`,
       [id, ev.aggregate, ev.aggregateId, ev.eventType, payloadJson, payloadHash, prevHash],
     );
     return id;

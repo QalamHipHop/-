@@ -10,7 +10,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
-    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --fix",
+    "lint": "eslint \"src/**/*.ts\" --fix",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -20,6 +20,7 @@
   "dependencies": {
     "@apollo/server": "^4.10.0",
     "@as-integrations/fastify": "^2.1.1",
+    "@fastify/cookie": "^9.3.0",
     "@fastify/static": "^7.0.4",
     "@nestjs/apollo": "^12.2.0",
     "@nestjs/axios": "^3.1.3",

@@ -10,10 +10,12 @@
  *  - POST /api/wallet/multisig/:id/sign
  */
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { WalletService } from './wallet.service';
+import { PaymentClient } from './payment.client';
+import { CustodyClient } from './custody.client';
 import type { Currency } from './wallet.types';
 
 class TransferDto {
@@ -24,12 +26,32 @@ class TransferDto {
   @IsOptional() @IsString() clientId?: string;
 }
 
-class WithdrawDto {
+class DepositDto {
+  @IsIn(['manual', 'stripe', 'zarinpal', 'nowpayments']) adapter!: string;
+  @IsString() amountMinor!: string;
   @IsString() currency!: Currency;
+  @IsString() @Length(1, 128) reference!: string;
+  @IsString() @Length(8, 128) idempotencyKey!: string;
+  @IsOptional() @IsString() returnUrl?: string;
+}
+
+class WithdrawalDestinationDto {
+  @IsIn(['evm', 'solana', 'btc', 'iban']) chain!: 'evm' | 'solana' | 'btc' | 'iban';
+  @IsString() destination!: string;
+  @IsOptional() @IsString() label?: string;
+}
+
+class ConfirmWithdrawalDestinationDto {
+  @IsString() @Length(32, 128) token!: string;
+}
+
+class WithdrawDto {
+  @IsString() @IsIn(['RIAL']) currency!: Currency;
+  @IsIn(['evm', 'solana', 'btc', 'iban']) chain!: 'evm' | 'solana' | 'btc' | 'iban';
   @IsString() amount!: string;
   @IsString() destination!: string; // chain:address or bank ref
   @IsOptional() @IsString() memo?: string;
-  @IsOptional() @IsString() clientId?: string;
+  @IsString() @Length(8, 128) clientId!: string;
 }
 
 class MultisigDto {
@@ -50,7 +72,19 @@ class SignDto {
 @Controller('wallet')
 @UseGuards(JwtAuthGuard)
 export class WalletController {
-  constructor(private readonly wallet: WalletService) {}
+  constructor(private readonly wallet: WalletService, private readonly payments: PaymentClient, private readonly custody: CustodyClient) {}
+
+  @Post('deposit')
+  async deposit(@Req() req: any, @Body() dto: DepositDto) {
+    return this.payments.createDeposit({
+      userId: req.user.id,
+      adapter: dto.adapter,
+      amount: { amountMinor: dto.amountMinor, currency: dto.currency },
+      reference: dto.reference,
+      idempotencyKey: dto.idempotencyKey,
+      returnUrl: dto.returnUrl,
+    });
+  }
 
   @Get('summary')
   async summary(@Req() req: any) {
@@ -79,16 +113,35 @@ export class WalletController {
     });
   }
 
+  @Get('withdrawal-destinations')
+  async listWithdrawalDestinations(@Req() req: any) {
+    return this.custody.listWithdrawalDestinations(req.user.id);
+  }
+
+  @Post('withdrawal-destinations')
+  async createWithdrawalDestination(@Req() req: any, @Body() dto: WithdrawalDestinationDto) {
+    return this.custody.createWithdrawalDestination({ userId: req.user.id, chain: dto.chain, destination: dto.destination, label: dto.label });
+  }
+
+  @Post('withdrawal-destinations/:id/confirm')
+  async confirmWithdrawalDestination(@Req() req: any, @Param('id') id: string, @Body() dto: ConfirmWithdrawalDestinationDto) {
+    return this.custody.confirmWithdrawalDestination({ userId: req.user.id, id, token: dto.token });
+  }
+
+  @Post('withdrawal-destinations/:id/revoke')
+  async revokeWithdrawalDestination(@Req() req: any, @Param('id') id: string) {
+    return this.custody.revokeWithdrawalDestination({ userId: req.user.id, id });
+  }
+
   @Post('withdraw')
   async withdraw(@Req() req: any, @Body() dto: WithdrawDto) {
-    // Withdrawal pipeline: creates pending tx + multi-sig proposal if hot wallet drain
-    const userId = req.user.id;
-    const tx = await this.wallet.debit({
-      userId, currency: dto.currency, amountMinor: dto.amount,
-      reason: 'withdraw', type: 'withdraw', clientId: dto.clientId,
-      meta: { destination: dto.destination, memo: dto.memo, status: 'pending' },
+    return this.custody.requestWithdrawal({
+      userId: req.user.id,
+      amount: dto.amount,
+      chain: dto.chain,
+      destination: dto.destination,
+      idempotencyKey: dto.clientId,
     });
-    return { txId: tx.txId, status: 'pending' };
   }
 
   @Get('multisig')

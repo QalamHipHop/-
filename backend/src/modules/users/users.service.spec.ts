@@ -107,7 +107,7 @@ describe('UsersService', () => {
     it('returns defaults when none stored', async () => {
       const p = await svc.getPreferences('u-1');
       expect(p.theme).toBe('system');
-      expect(p.fiat).toBe('USD');
+      expect(p.fiat).toBe('IRR');
     });
     it('rejects invalid theme', async () => {
       await expect(

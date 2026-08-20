@@ -63,7 +63,9 @@ contract RialAMM is ERC20, IAMM {
         uint256 amount1 = bal1 - r1;
         uint256 totalSupply_ = totalSupply();
         if (totalSupply_ == 0) {
-            liquidity = FixedPointMath.sqrt(amount0 * amount1) - 1000;
+            // Compute sqrt(product) without multiplying two large reserves
+            // first; the direct product can overflow uint256 during graduation.
+            liquidity = FixedPointMath.sqrt(amount0) * FixedPointMath.sqrt(amount1) - 1000;
             _mint(address(0xdead), 1000); // permanent lock to prevent divide-by-zero
         } else {
             liquidity = FixedPointMath.mulDiv(
@@ -113,8 +115,10 @@ contract RialAMM is ERC20, IAMM {
         // 0.3% fee on input, scaled in WAD.
         uint256 bal0Adj = bal0 * 1000 - amount0In * 3;
         uint256 bal1Adj = bal1 * 1000 - amount1In * 3;
-        // (bal0Adj * bal1Adj) >= (r0 * r1) * 1000^2
-        if (bal0Adj * bal1Adj < uint256(r0) * uint256(r1) * (1000 ** 2)) revert InsufficientLiquidity();
+        // Compare the fee-adjusted invariant with full-precision division;
+        // direct multiplication could overflow uint256 for large reserves.
+        uint256 adjustedProduct = FixedPointMath.mulDiv(bal0Adj, bal1Adj, 1000 ** 2);
+        if (adjustedProduct < uint256(r0) * uint256(r1)) revert InsufficientLiquidity();
         _update(bal0, bal1, r0, r1);
         emit Swap(msg.sender, amount0In, amount1In, amount0Out, amount1Out, to);
     }

@@ -15,9 +15,7 @@ import { HealthController } from './health/health.controller';
 import { AdaptersModule } from './adapters/adapters.module';
 import { IntentsModule } from './intents/intents.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
-import { RestController } from './rest/rest.controller';
 import { RestModule } from './rest/rest.module';
-import { GrpcController } from './grpc/grpc.controller';
 import { GrpcModule } from './grpc/grpc.module';
 
 @Module({
