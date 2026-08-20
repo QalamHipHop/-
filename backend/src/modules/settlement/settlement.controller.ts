@@ -35,11 +35,12 @@ export class SettlementController {
 
   @Public()
   @Post('convert')
-  async convert(@Body() body: { usd?: number; rialMinor?: string; rialMajor?: string }) {
-    if (typeof body.usd === 'number' && Number.isFinite(body.usd)) {
-      const minor = await this.svc.convertUsdToRial(body.usd);
+  async convert(@Body() body: { usd?: string | number; rialMinor?: string; rialMajor?: string }) {
+    if (body.usd !== undefined && /^\d+(\.\d+)?$/.test(String(body.usd))) {
+      const usd = String(body.usd);
+      const minor = await this.svc.convertUsdToRial(usd);
       return {
-        input: { usd: body.usd },
+        input: { usd },
         output: { rialMinor: minor.toString(), rialMajor: this.svc.fromMinor(minor) },
       };
     }

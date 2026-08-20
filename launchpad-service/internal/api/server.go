@@ -25,16 +25,21 @@ import (
 
 type Server struct {
 	UnimplementedLaunchpadServer
-	launch        *launch.Service
-	grad          *graduation.Service
-	log           *zap.Logger
-	internalToken string
+	launch          *launch.Service
+	grad            *graduation.Service
+	log             *zap.Logger
+	internalToken   string
+	internalService string
 }
 
 // NewServer accepts mutations only from a platform caller that has already
 // authenticated the end user and forwards the verified identity headers.
-func NewServer(l *launch.Service, g *graduation.Service, log *zap.Logger, internalToken string) *Server {
-	return &Server{launch: l, grad: g, log: log, internalToken: internalToken}
+func NewServer(l *launch.Service, g *graduation.Service, log *zap.Logger, internalToken string, internalService ...string) *Server {
+	service := "backend"
+	if len(internalService) > 0 && strings.TrimSpace(internalService[0]) != "" {
+		service = strings.TrimSpace(internalService[0])
+	}
+	return &Server{launch: l, grad: g, log: log, internalToken: internalToken, internalService: service}
 }
 
 // Handler returns the HTTP routes mux.  Healthcheck is included.
@@ -310,7 +315,10 @@ func (s *Server) sell(w http.ResponseWriter, r *http.Request) {
 func (s *Server) internalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		provided := r.Header.Get("X-Rial-Internal-Token")
-		if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.internalToken)) != 1 {
+		service := r.Header.Get("X-Rial-Service")
+		validToken := provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(s.internalToken)) == 1
+		validService := service != "" && subtle.ConstantTimeCompare([]byte(service), []byte(s.internalService)) == 1
+		if !validToken || !validService {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "internal_auth_required"})
 			return
 		}

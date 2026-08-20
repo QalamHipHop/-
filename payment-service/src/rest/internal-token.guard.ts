@@ -12,8 +12,12 @@ export class InternalTokenGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<{ headers: Record<string, string | string[] | undefined> }>();
     const raw = request.headers['x-internal-token'];
     const provided = Array.isArray(raw) ? raw[0] ?? '' : raw ?? '';
+    const rawService = request.headers['x-rial-service'];
+    const service = Array.isArray(rawService) ? rawService[0] ?? '' : rawService ?? '';
     const expected = this.cfg.internalToken;
-    const valid = expected.length > 0 && provided.length === expected.length && timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+    const validToken = expected.length > 0 && provided.length === expected.length && timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+    const validService = service === (this.cfg.internalService ?? 'backend');
+    const valid = validToken && validService;
     if (!valid) throw new UnauthorizedException('internal_auth_required');
     return true;
   }

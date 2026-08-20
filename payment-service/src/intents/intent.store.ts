@@ -119,20 +119,24 @@ export class IntentStore {
       WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'`, [id]);
   }
 
-  async markSettlementFailed(id: string, error: string): Promise<void> {
-    await this.db.query(`UPDATE payments.payment_intents
+  async markSettlementFailed(id: string, error: string, claimToken?: string): Promise<boolean> {
+    const r = await this.db.query(`UPDATE payments.payment_intents
       SET settlement_status='failed', settlement_attempts=settlement_attempts+1,
           settlement_last_error=$2,
           settlement_next_attempt_at=now() + (LEAST(300, POWER(2, LEAST(settlement_attempts + 1, 8))) * interval '1 second'),
           settlement_claim_token=NULL, settlement_claimed_at=NULL
-      WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'`, [id, error]);
+      WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'
+        AND (($3::text IS NULL AND settlement_claim_token IS NULL) OR settlement_claim_token=$3)`, [id, error, claimToken ?? null]);
+    return r.rowCount === 1;
   }
 
-  async markSettlementSucceeded(id: string, txId: string): Promise<void> {
-    await this.db.query(`UPDATE payments.payment_intents
+  async markSettlementSucceeded(id: string, txId: string, claimToken?: string): Promise<boolean> {
+    const r = await this.db.query(`UPDATE payments.payment_intents
       SET settlement_status='succeeded', settlement_tx_id=$2, settled_at=now(), settlement_last_error=NULL,
           settlement_next_attempt_at=NULL, settlement_claim_token=NULL, settlement_claimed_at=NULL
-      WHERE id=$1 AND kind='deposit' AND status='succeeded'`, [id, txId]);
+      WHERE id=$1 AND kind='deposit' AND status='succeeded'
+        AND (($3::text IS NULL AND settlement_claim_token IS NULL) OR settlement_claim_token=$3)`, [id, txId, claimToken ?? null]);
+    return r.rowCount === 1;
   }
 
   async claimSettlement(id: string, claimToken: string, leaseSeconds = 300): Promise<boolean> {

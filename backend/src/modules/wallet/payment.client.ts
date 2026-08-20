@@ -27,7 +27,7 @@ export class PaymentClient {
     try {
       response = await fetch(`${this.baseUrl}/v1/deposits`, {
         method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Internal-Token': this.token },
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Internal-Token': this.token, 'X-Rial-Service': 'backend' },
         body: JSON.stringify(input),
         signal: AbortSignal.timeout(5_000),
       });

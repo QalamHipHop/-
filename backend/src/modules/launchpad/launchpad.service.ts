@@ -83,6 +83,7 @@ export class LaunchpadService {
         throw new BadGatewayException({ code: 'LAUNCHPAD_CREDENTIAL_MISSING', message: 'Launchpad service credential is unavailable' });
       }
       headers['X-Rial-Internal-Token'] = this.internalToken;
+      headers['X-Rial-Service'] = 'backend';
       headers['X-Rial-User-ID'] = actor.userId;
       headers['X-Rial-Actor-Roles'] = actor.roles.join(',');
     }

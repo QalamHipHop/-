@@ -2,13 +2,14 @@
 //  gRPC controller — internal RIAL payment service contract
 //  Author: Qalamhiphop
 // =============================================================================
-import { Controller } from '@nestjs/common';
+import { Controller, UseGuards } from '@nestjs/common';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
 import { status as GrpcStatus } from '@grpc/grpc-js';
 import { IntentsService } from '../intents/intents.service';
 import { AdapterRegistry } from '../adapters/adapter.registry';
 import { Money } from '../adapters/types';
 import { IntentJSON } from '../intents/intent.entity';
+import { GrpcInternalAuthGuard } from './grpc-internal-auth.guard';
 
 interface MoneyProto {
   amountMinor: string;
@@ -66,6 +67,7 @@ const ENUM_TO_ADAPTER: Record<number, string> = Object.fromEntries(
   Object.entries(ADAPTER_TO_ENUM).map(([k, v]) => [v, k]),
 );
 
+@UseGuards(GrpcInternalAuthGuard)
 @Controller()
 export class GrpcController {
   constructor(

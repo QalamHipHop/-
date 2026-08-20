@@ -256,7 +256,7 @@ export class IntentsService {
       let money: Money;
       try { money = this.toRialSettlement(it.settledAmount ?? it.amount); }
       catch (error) {
-        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error));
+        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error), claimToken);
         continue;
       }
       try {
@@ -268,10 +268,11 @@ export class IntentsService {
           idempotencyKey: `payment-deposit:${it.id}`,
           metadata: { intentId: it.id, externalId: it.externalId ?? null, adapter: it.adapter, recovery: true },
         });
-        await this.store.markSettlementSucceeded(it.id, txId);
-        completed += 1;
+        if (await this.store.markSettlementSucceeded(it.id, txId, claimToken)) {
+          completed += 1;
+        }
       } catch (error) {
-        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error));
+        await this.store.markSettlementFailed(it.id, error instanceof Error ? error.message : String(error), claimToken);
       }
     }
     return completed;

@@ -29,7 +29,7 @@ import { GrpcModule } from './grpc/grpc.module';
       useFactory: () => ({
         pinoHttp: {
           level: process.env['PAYMENT_LOG_LEVEL'] ?? 'info',
-          redact: ['req.headers.authorization', 'req.headers["x-internal-token"]'],
+          redact: ['req.headers.authorization', 'req.headers["x-internal-token"]', 'req.headers["x-rial-internal-token"]'],
           transport:
             process.env['NODE_ENV'] === 'production'
               ? undefined

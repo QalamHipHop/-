@@ -40,10 +40,15 @@ describe('SettlementService', () => {
     expect(r.stale).toBe(false);
   });
 
-  it('converts USD → RIAL minor', async () => {
-    const minor = await svc.convertUsdToRial(123);
-    // rate = 1 USD / RIAL, 123 USD = 123 RIAL = 123 * 1e8 minor
-    expect(minor.toString()).toBe('12300000000');
+  it('converts USD → RIAL minor without floating-point arithmetic', async () => {
+    const minor = await svc.convertUsdToRial('123.45');
+    // rate = 1 USD / RIAL, 123.45 USD = 123.45 RIAL = 12,345,000,000 minor
+    expect(minor.toString()).toBe('12345000000');
+  });
+
+  it('converts large RIAL minor values to an exact USD string', async () => {
+    const usd = await svc.convertRialToUsd(900719925474099100n);
+    expect(usd).toBe('9007199254.74099100');
   });
 
   it('throws when no rate available', async () => {

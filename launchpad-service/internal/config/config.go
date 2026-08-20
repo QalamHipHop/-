@@ -13,17 +13,18 @@ type Config struct {
 	Env     string `mapstructure:"env"`
 	Service string `mapstructure:"service"`
 	// InternalToken authenticates platform services to state-changing HTTP routes.
-	InternalToken string `mapstructure:"internal_token"`
-	GRPC          GRPC   `mapstructure:"grpc"`
-	HTTP          HTTP   `mapstructure:"http"`
-	Postgres      PG     `mapstructure:"postgres"`
-	Redis         RD     `mapstructure:"redis"`
-	Nats          NATS   `mapstructure:"nats"`
-	Kafka         KFK    `mapstructure:"kafka"`
-	JWT           JWT    `mapstructure:"jwt"`
-	AI            AI     `mapstructure:"ai"`
-	Wallet        Wallet `mapstructure:"wallet"`
-	Launchpad     LPD    `mapstructure:"launchpad"`
+	InternalToken   string `mapstructure:"internal_token"`
+	InternalService string `mapstructure:"internal_service"`
+	GRPC            GRPC   `mapstructure:"grpc"`
+	HTTP            HTTP   `mapstructure:"http"`
+	Postgres        PG     `mapstructure:"postgres"`
+	Redis           RD     `mapstructure:"redis"`
+	Nats            NATS   `mapstructure:"nats"`
+	Kafka           KFK    `mapstructure:"kafka"`
+	JWT             JWT    `mapstructure:"jwt"`
+	AI              AI     `mapstructure:"ai"`
+	Wallet          Wallet `mapstructure:"wallet"`
+	Launchpad       LPD    `mapstructure:"launchpad"`
 }
 
 type GRPC struct {
@@ -90,6 +91,7 @@ func Load() (*Config, error) {
 	v.SetDefault("env", "development")
 	v.SetDefault("service", "launchpad-service")
 	v.SetDefault("internal_token", "")
+	v.SetDefault("internal_service", "backend")
 	v.SetDefault("grpc.port", "50054")
 	v.SetDefault("http.port", "8084")
 
@@ -138,6 +140,9 @@ func Load() (*Config, error) {
 	}
 	if strings.TrimSpace(c.InternalToken) == "" {
 		return nil, errors.New("LAUNCHPAD_INTERNAL_TOKEN required")
+	}
+	if strings.TrimSpace(c.InternalService) == "" {
+		return nil, errors.New("LAUNCHPAD_INTERNAL_SERVICE required")
 	}
 	if c.Env == "production" && len(c.InternalToken) < 32 {
 		return nil, errors.New("LAUNCHPAD_INTERNAL_TOKEN must be at least 32 characters in production")

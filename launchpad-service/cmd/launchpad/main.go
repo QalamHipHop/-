@@ -73,7 +73,7 @@ func main() {
 	gradSvc := graduation.NewService(cfg, curveEngine, pg, rd, nc, ammAdapter, logger)
 	launchSvc := launch.NewService(cfg, pg, rd, nc, kc, riskClient, walletClient, curveEngine, gradSvc, logger)
 
-	srv := api.NewServer(launchSvc, gradSvc, logger, cfg.InternalToken)
+	srv := api.NewServer(launchSvc, gradSvc, logger, cfg.InternalToken, cfg.InternalService)
 	grpcSrv := grpc.NewServer(grpc.UnaryInterceptor(middleware.ChainUnary(
 		middleware.Recovery(logger),
 		middleware.Logging(logger),

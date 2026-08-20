@@ -281,9 +281,14 @@ export class TradingService implements OnModuleInit, OnModuleDestroy {
     const trades: Trade[] = [];
     const book = this.ensureBook(taker.market_id);
     const opposite: BookSide = taker.side === 'buy' ? book.asks : book.bids;
-    const levels = [...opposite.levels.entries()].sort(([a], [b]) =>
-      taker.side === 'buy' ? Number(BigInt(a) - BigInt(b)) : Number(BigInt(b) - BigInt(a)),
-    );
+    const levels = [...opposite.levels.entries()].sort(([a], [b]) => {
+      const left = BigInt(a);
+      const right = BigInt(b);
+      const descending = taker.side === 'buy';
+      if (left === right) return 0;
+      if (descending) return left > right ? -1 : 1;
+      return left < right ? -1 : 1;
+    });
     let remaining = BigInt(taker.amount_minor);
     let totalFilled = 0n;
     let totalNotional = 0n;

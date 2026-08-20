@@ -42,6 +42,7 @@ export interface AppConfig {
   defaultAdapter: string;
   defaultFiat: string;
   internalToken: string;
+  internalService?: string;
   walletBaseUrl?: string;
   walletInternalToken?: string;
   databaseUrl: string;
@@ -84,6 +85,7 @@ function boolEnv(name: string, fallback: boolean): boolean {
 export const configuration = (): AppConfig => {
   const nodeEnv = process.env['NODE_ENV'] ?? 'development';
   const internalToken = process.env['PAYMENT_INTERNAL_TOKEN'] ?? '';
+  const internalService = process.env['PAYMENT_INTERNAL_SERVICE'] ?? 'backend';
   if (nodeEnv === 'production' && (internalToken.length < 32 || internalToken === 'change-me')) {
     throw new Error('PAYMENT_INTERNAL_TOKEN must be a unique secret of at least 32 characters in production');
   }
@@ -93,6 +95,7 @@ export const configuration = (): AppConfig => {
   defaultAdapter: process.env['PAYMENT_DEFAULT_ADAPTER'] ?? 'manual',
   defaultFiat: process.env['PAYMENT_DEFAULT_FIAT'] ?? 'USD',
   internalToken,
+  internalService,
   walletBaseUrl: (process.env['PAYMENT_WALLET_BASE_URL'] ?? 'http://wallet-service:50053').replace(/\/$/, ''),
   walletInternalToken: process.env['WALLET_INTERNAL_TOKEN'] ?? '',
   databaseUrl: process.env['PAYMENT_DATABASE_URL'] ?? process.env['DATABASE_URL'] ?? '',

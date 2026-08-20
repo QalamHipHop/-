@@ -117,16 +117,20 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
     return this.refreshRate();
   }
 
-  async convertUsdToRial(usd: number): Promise<bigint> {
+  async convertUsdToRial(usd: string | number): Promise<bigint> {
     const r = await this.currentRate();
     if (r.stale || r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
-    return BigInt(Math.round((usd / r.usdPerUnit) * Number(SCALE)));
+    const usdFraction = parseDecimal(String(usd));
+    const rateFraction = parseDecimal(String(r.usdPerUnit));
+    if (usdFraction.numerator < 0n || rateFraction.numerator <= 0n) throw new Error('amount and rate must be positive');
+    return roundFraction(usdFraction.numerator * rateFraction.denominator * SCALE, usdFraction.denominator * rateFraction.numerator);
   }
 
-  async convertRialToUsd(minor: bigint): Promise<number> {
+  async convertRialToUsd(minor: bigint): Promise<string> {
     const r = await this.currentRate();
     if (r.stale || r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
-    return (Number(minor) / Number(SCALE)) * r.usdPerUnit;
+    const rateFraction = parseDecimal(String(r.usdPerUnit));
+    return formatFraction(minor * rateFraction.numerator, SCALE * rateFraction.denominator, 8);
   }
 
   /** Convert a major-unit string ("12.34") to minor bigint. */
@@ -216,4 +220,35 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`writeCache failed: ${(e as Error).message}`);
     }
   }
+}
+
+
+type Fraction = { numerator: bigint; denominator: bigint };
+
+function parseDecimal(raw: string): Fraction {
+  const value = raw.trim();
+  if (!/^-?\d+(\.\d+)?$/.test(value)) throw new Error(`invalid decimal: ${raw}`);
+  const negative = value.startsWith('-');
+  const body = negative ? value.slice(1) : value;
+  const [whole, fraction = ''] = body.split('.');
+  const denominator = 10n ** BigInt(fraction.length);
+  const numerator = BigInt(whole) * denominator + BigInt(fraction || '0');
+  return { numerator: negative ? -numerator : numerator, denominator };
+}
+
+function roundFraction(numerator: bigint, denominator: bigint): bigint {
+  if (denominator <= 0n) throw new Error('fraction denominator must be positive');
+  if (numerator < 0n) return -roundFraction(-numerator, denominator);
+  return (numerator + denominator / 2n) / denominator;
+}
+
+function formatFraction(numerator: bigint, denominator: bigint, decimals: number): string {
+  if (denominator <= 0n) throw new Error('fraction denominator must be positive');
+  const scale = 10n ** BigInt(decimals);
+  const rounded = roundFraction(numerator * scale, denominator);
+  const negative = rounded < 0n;
+  const absolute = negative ? -rounded : rounded;
+  const whole = absolute / scale;
+  const fraction = (absolute % scale).toString().padStart(decimals, '0');
+  return `${negative ? '-' : ''}${whole}.${fraction}`;
 }
