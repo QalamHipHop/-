@@ -251,6 +251,8 @@ export class IntentsService {
     const pending = await this.store.listSettlementRecovery(limit);
     let completed = 0;
     for (const it of pending) {
+      const claimToken = `settlement-recovery:${randomUUID()}`;
+      if (!(await this.store.claimSettlement(it.id, claimToken, 300))) continue;
       let money: Money;
       try { money = this.toRialSettlement(it.settledAmount ?? it.amount); }
       catch (error) {

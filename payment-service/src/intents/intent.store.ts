@@ -59,6 +59,8 @@ type IntentRow = {
   settlement_last_error?: string | null;
   settlement_tx_id?: string | null;
   settled_at?: Date | string | null;
+  settlement_claim_token?: string | null;
+  settlement_claimed_at?: Date | string | null;
 };
 
 @Injectable()
@@ -113,7 +115,7 @@ export class IntentStore {
   async markSettlementPending(id: string): Promise<void> {
     await this.db.query(`UPDATE payments.payment_intents
       SET status='succeeded', settlement_status='pending', settlement_last_error=NULL,
-          settlement_next_attempt_at=now()
+          settlement_next_attempt_at=now(), settlement_claim_token=NULL, settlement_claimed_at=NULL
       WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'`, [id]);
   }
 
@@ -121,21 +123,36 @@ export class IntentStore {
     await this.db.query(`UPDATE payments.payment_intents
       SET settlement_status='failed', settlement_attempts=settlement_attempts+1,
           settlement_last_error=$2,
-          settlement_next_attempt_at=now() + (LEAST(300, POWER(2, LEAST(settlement_attempts + 1, 8))) * interval '1 second')
+          settlement_next_attempt_at=now() + (LEAST(300, POWER(2, LEAST(settlement_attempts + 1, 8))) * interval '1 second'),
+          settlement_claim_token=NULL, settlement_claimed_at=NULL
       WHERE id=$1 AND kind='deposit' AND status='succeeded' AND settlement_status <> 'succeeded'`, [id, error]);
   }
 
   async markSettlementSucceeded(id: string, txId: string): Promise<void> {
     await this.db.query(`UPDATE payments.payment_intents
       SET settlement_status='succeeded', settlement_tx_id=$2, settled_at=now(), settlement_last_error=NULL,
-          settlement_next_attempt_at=NULL
+          settlement_next_attempt_at=NULL, settlement_claim_token=NULL, settlement_claimed_at=NULL
       WHERE id=$1 AND kind='deposit' AND status='succeeded'`, [id, txId]);
+  }
+
+  async claimSettlement(id: string, claimToken: string, leaseSeconds = 300): Promise<boolean> {
+    const r = await this.db.query(
+      `UPDATE payments.payment_intents
+          SET settlement_claim_token=$2, settlement_claimed_at=now()
+        WHERE id=$1 AND kind='deposit' AND status='succeeded'
+          AND settlement_status IN ('pending','failed')
+          AND (settlement_claimed_at IS NULL OR settlement_claimed_at < now() - ($3::int * interval '1 second'))
+        RETURNING id`,
+      [id, claimToken, Math.max(30, Math.min(900, leaseSeconds))],
+    );
+    return r.rows.length === 1;
   }
 
   async listSettlementRecovery(limit = 50): Promise<PaymentIntent[]> {
     const r = await this.db.query<IntentRow>(`SELECT * FROM payments.payment_intents
       WHERE kind='deposit' AND status='succeeded' AND settlement_status IN ('pending','failed')
-        AND (settlement_next_attempt_at IS NULL OR settlement_next_attempt_at <= now())
+          AND (settlement_next_attempt_at IS NULL OR settlement_next_attempt_at <= now())
+          AND (settlement_claimed_at IS NULL OR settlement_claimed_at < now() - interval '5 minutes')
       ORDER BY updated_at ASC LIMIT $1`, [Math.min(Math.max(limit, 1), 200)]);
     return r.rows.map((row) => this.toDomain(row));
   }

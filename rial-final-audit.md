@@ -16,3 +16,5 @@
 ۳. launchpad HTTP API نیز در quote/buy/sell invalid path UUID را silent به `uuid.Nil` تبدیل می‌کرد. اکنون هر سه handler پیش از decode/domain call خطای `INVALID_ID` برمی‌گردانند. `gofmt` و `go test ./...` launchpad پس از اصلاح موفق شدند.
 
 ۴. monetary contractهای launchpad در gateway و HTTP API از JSON number به decimal string منتقل شدند: `amount_in_minor` و `graduation_rial_minor` اکنون digits-only string هستند و فقط داخل Go با parseInt64 کنترل‌شده به int64 تبدیل می‌شوند. frontend نیز `graduation_rial_minor` را string می‌داند. این تغییر از precision loss در JavaScript/JSON جلوگیری می‌کند. validation کامل Go، backend و frontend موفق شد.
+
+۵. settlement recovery payment-service فقط candidateها را list می‌کرد و برای چند replica lease نداشت؛ بنابراین در failure/retry همزمان، چند worker می‌توانست یک wallet credit را concurrently صدا بزند. اکنون migration `0015-payment-settlement-lease.sql` ستون‌های claim token/time و index recovery را اضافه می‌کند، `IntentStore.claimSettlement` با UPDATE شرطی claim اتمیک انجام می‌دهد، و success/failure/pending claim را پاک می‌کنند. downstream idempotency key همچنان barrier نهایی است.
