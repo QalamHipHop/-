@@ -66,13 +66,16 @@ export class TradingService implements OnModuleInit, OnModuleDestroy {
         for (const order of r.rows) this.addToBook(order);
       }
     } catch (e) {
+      if (process.env.NODE_ENV === 'production') throw e;
       this.logger.warn(`book warm-up failed: ${(e as Error).message}`);
     }
-    // subscribe to matching engine trade events
+    // Subscribe to matching-engine trade events. Production must not continue
+    // without this authoritative settlement input; only dev/test may degrade.
     try {
-      await this.events.subscribe?.('trading.trade.executed', (data) => this.applyExternalTrade(data as Trade));
-    } catch {
-      // EventBusService.subscribe is optional in current infra; safe to ignore.
+      await this.events.subscribe('trading.trade.executed', (data) => this.applyExternalTrade(data as Trade));
+    } catch (e) {
+      if (process.env.NODE_ENV === 'production') throw e;
+      this.logger.warn(`matching event subscription unavailable: ${(e as Error).message}`);
     }
   }
 
