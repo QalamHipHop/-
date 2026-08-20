@@ -32,7 +32,7 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
 
   const { data: balance, isError: balanceUnavailable } = useQuery({
     queryKey: ['balance', side === 'buy' ? 'rial' : symbol],
-    queryFn: () => api.get<{ available: number; currency: string }>(`/api/wallet/balance`, { query: { asset: side === 'buy' ? 'RIAL' : symbol } }),
+    queryFn: () => api.get<{ available: string | number; currency: string }>(`/api/wallet/balance`, { query: { asset: side === 'buy' ? 'RIAL' : symbol } }),
   });
 
   React.useEffect(() => {
@@ -44,10 +44,12 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
   const setPercent = (p: number) => {
     setPct(p);
     if (!balance) return;
+    const available = Number(balance.available);
+    if (!Number.isFinite(available) || available <= 0) return;
     if (side === 'buy') {
-      setAmount(((balance.available * p) / 100 / Math.max(0.0001, parseFloat(price || '0'))).toFixed(4));
+      setAmount(((available * p) / 100 / Math.max(0.0001, parseFloat(price || '0'))).toFixed(4));
     } else {
-      setAmount(((balance.available * p) / 100).toFixed(4));
+      setAmount(((available * p) / 100).toFixed(4));
     }
   };
 
@@ -66,12 +68,16 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
     }
     setSubmitting(true);
     try {
-      await api.post('/api/orders', {
-        symbol,
+      const amountMinor = toMinorString(amount);
+      const priceMinor = orderType === 'market' ? undefined : toMinorString(price);
+      await api.post('/api/trading/orders', {
+        marketId: symbol,
         side,
         type: orderType,
-        price: orderType === 'market' ? null : parseFloat(price),
-        amount: parseFloat(amount),
+        ...(priceMinor ? { priceMinor } : {}),
+        amountMinor,
+        timeInForce: 'GTC',
+        clientId: `web-${crypto.randomUUID()}`,
       });
       toast({ variant: 'success', title: t('orderPlaced'), description: `${side === 'buy' ? t('buy') : t('sell')} ${amount} ${symbol}` });
       setAmount('');
@@ -160,7 +166,7 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
 
         <div className="space-y-1 text-xs">
           <Row label={t('total')} value={`${formatNumber(total, { maximumFractionDigits: 2 })} ﷼`} />
-          <Row label={t('available')} value={balance ? `${formatNumber(balance.available, { maximumFractionDigits: 4 })} ${balance.currency}` : t('unavailable')} />
+          <Row label={t('available')} value={balance ? `${formatNumber(Number(balance.available), { maximumFractionDigits: 4 })} ${balance.currency}` : t('unavailable')} />
           <Row label={t('slippage')} value="Engine-enforced" />
           <Row label={t('fee')} value="Engine-calculated" />
         </div>
@@ -175,6 +181,14 @@ export function TradeForm({ symbol, side, onSideChange, marketPrice }: TradeForm
       </CardContent>
     </Card>
   );
+}
+
+function toMinorString(value: string): string {
+  const normalized = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(normalized) || Number(normalized) <= 0) throw new Error('invalid monetary amount');
+  const [whole, fraction = ''] = normalized.split('.');
+  if (fraction.length > 8) throw new Error('amount supports at most 8 decimal places');
+  return `${BigInt(whole) * 100000000n + BigInt((fraction + '0'.repeat(8)).slice(0, 8))}`;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
