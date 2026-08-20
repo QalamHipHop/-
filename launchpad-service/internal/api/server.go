@@ -95,11 +95,16 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		FreezeAuthority     string                `json:"freeze_authority"`
 		CurveModel          string                `json:"curve_model"`
 		CurveParams         json.RawMessage       `json:"curve_params"`
-		GraduationRialMinor int64                 `json:"graduation_rial_minor"`
+		GraduationRialMinor string                `json:"graduation_rial_minor"`
 		Vesting             []launch.VestingInput `json:"vesting"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, err)
+		return
+	}
+	graduationRialMinor, err := parseInt64(body.GraduationRialMinor)
+	if err != nil {
+		writeErr(w, errors.New("INVALID_GRADUATION_RIAL_MINOR"))
 		return
 	}
 	creator, err := s.authenticatedUserID(r)
@@ -114,7 +119,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		Website: body.Website, Telegram: body.Telegram, Twitter: body.Twitter, Discord: body.Discord, GitHub: body.GitHub,
 		MintAuthority: body.MintAuthority, FreezeAuthority: body.FreezeAuthority,
 		CurveModel: body.CurveModel, CurveParams: body.CurveParams,
-		GraduationRialMinor: body.GraduationRialMinor, Vesting: body.Vesting,
+		GraduationRialMinor: graduationRialMinor, Vesting: body.Vesting,
 	}
 	t, err := s.launch.Create(r.Context(), creator, in)
 	if err != nil {
@@ -207,7 +212,7 @@ func (s *Server) pause(w http.ResponseWriter, r *http.Request) {
 }
 
 type quoteReq struct {
-	AmountInMinor int64 `json:"amount_in_minor"`
+	AmountInMinor string `json:"amount_in_minor"`
 }
 
 func (s *Server) quoteBuy(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +226,12 @@ func (s *Server) quoteBuy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	q, err := s.launch.QuoteBuy(r.Context(), id, body.AmountInMinor)
+	amountInMinor, err := parseInt64(body.AmountInMinor)
+	if err != nil {
+		writeErr(w, errors.New("INVALID_AMOUNT_IN_MINOR"))
+		return
+	}
+	q, err := s.launch.QuoteBuy(r.Context(), id, amountInMinor)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -230,7 +240,7 @@ func (s *Server) quoteBuy(w http.ResponseWriter, r *http.Request) {
 }
 
 type buyReq struct {
-	AmountInMinor int64  `json:"amount_in_minor"`
+	AmountInMinor string `json:"amount_in_minor"`
 	ClientID      string `json:"client_id"`
 }
 
@@ -250,7 +260,12 @@ func (s *Server) buy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	res, err := s.launch.Buy(r.Context(), uid, id, body.AmountInMinor, body.ClientID)
+	amountInMinor, err := parseInt64(body.AmountInMinor)
+	if err != nil {
+		writeErr(w, errors.New("INVALID_AMOUNT_IN_MINOR"))
+		return
+	}
+	res, err := s.launch.Buy(r.Context(), uid, id, amountInMinor, body.ClientID)
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -265,7 +280,7 @@ func (s *Server) sell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		AmountInMinor int64  `json:"amount_in_minor"`
+		AmountInMinor string `json:"amount_in_minor"`
 		ClientID      string `json:"client_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -277,7 +292,12 @@ func (s *Server) sell(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	res, err := s.launch.Sell(r.Context(), uid, id, body.AmountInMinor, body.ClientID)
+	amountInMinor, err := parseInt64(body.AmountInMinor)
+	if err != nil {
+		writeErr(w, errors.New("INVALID_AMOUNT_IN_MINOR"))
+		return
+	}
+	res, err := s.launch.Sell(r.Context(), uid, id, amountInMinor, body.ClientID)
 	if err != nil {
 		writeErr(w, err)
 		return

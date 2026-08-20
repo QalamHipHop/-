@@ -24,7 +24,7 @@ interface LaunchpadToken {
   total_supply: string;
   description?: string;
   logo_url?: string;
-  graduation_rial_minor: number;
+  graduation_rial_minor: string;
   status: 'pending' | 'live' | 'paused' | 'rejected' | 'graduated' | string;
   graduated: boolean;
   created_at: string;

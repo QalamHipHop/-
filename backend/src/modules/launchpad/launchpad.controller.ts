@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Matches, Min } from 'class-validator';
 import { JwtAuthGuard, Public } from '../../common/guards/jwt-auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { LaunchpadService } from './launchpad.service';
@@ -23,12 +23,12 @@ class CreateTokenDto {
   @IsOptional() @IsString() freeze_authority?: string;
   @IsString() @IsNotEmpty() curve_model!: string;
   curve_params!: unknown;
-  @IsInt() @Min(1) graduation_rial_minor!: number;
+  @IsString() @Matches(/^\d+$/) graduation_rial_minor!: string;
   @IsOptional() vesting?: unknown[];
 }
 
 class TradeDto {
-  @IsInt() @Min(1) amount_in_minor!: number;
+  @IsString() @Matches(/^\d+$/) amount_in_minor!: string;
   @IsString() @IsNotEmpty() client_id!: string;
 }
 
