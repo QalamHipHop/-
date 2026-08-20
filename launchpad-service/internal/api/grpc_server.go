@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -62,12 +64,20 @@ func (s *Server) CreateToken(ctx context.Context, req *CreateTokenRequest) (*Tok
 			return nil, status.Error(codes.InvalidArgument, "vesting.start_at is required")
 		}
 		start := v.GetStartAt().AsTime()
-		vesting = append(vesting, launch.VestingInput{Beneficiary: v.GetBeneficiary(), TotalMinor: parseInt64(v.GetTotalMinor()), CliffSeconds: int(v.GetCliffSeconds()), DurationSeconds: int(v.GetDurationSeconds()), StartAt: start})
+		totalMinor, err := parseInt64(v.GetTotalMinor())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "vesting.total_minor must be a valid int64")
+		}
+		vesting = append(vesting, launch.VestingInput{Beneficiary: v.GetBeneficiary(), TotalMinor: totalMinor, CliffSeconds: int(v.GetCliffSeconds()), DurationSeconds: int(v.GetDurationSeconds()), StartAt: start})
+	}
+	graduationRialMinor, err := parseInt64(req.GetGraduationRialMinor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "graduation_rial_minor must be a valid int64")
 	}
 	t, err := s.launch.Create(ctx, creator, launch.CreateTokenInput{
 		Name: req.GetName(), Symbol: req.GetSymbol(), Decimals: int(req.GetDecimals()), TotalSupply: req.GetTotalSupply(), Chain: req.GetChain(), ContractAddress: req.GetContractAddress(),
 		LogoURL: req.GetLogoUrl(), BannerURL: req.GetBannerUrl(), Description: req.GetDescription(), Website: req.GetWebsite(), Telegram: req.GetTelegram(), Twitter: req.GetTwitter(), Discord: req.GetDiscord(), GitHub: req.GetGithub(),
-		MintAuthority: req.GetMintAuthority(), FreezeAuthority: req.GetFreezeAuthority(), CurveModel: req.GetCurveModel(), CurveParams: []byte(req.GetCurveParamsJson()), GraduationRialMinor: parseInt64(req.GetGraduationRialMinor()), Vesting: vesting,
+		MintAuthority: req.GetMintAuthority(), FreezeAuthority: req.GetFreezeAuthority(), CurveModel: req.GetCurveModel(), CurveParams: []byte(req.GetCurveParamsJson()), GraduationRialMinor: graduationRialMinor, Vesting: vesting,
 	})
 	if err != nil {
 		return nil, mapGRPCError(err)
@@ -76,31 +86,59 @@ func (s *Server) CreateToken(ctx context.Context, req *CreateTokenRequest) (*Tok
 }
 
 func (s *Server) ApproveToken(ctx context.Context, req *TokenActionRequest) (*Empty, error) {
-	return &Empty{}, s.launch.Approve(ctx, mustUUID(req.GetActorId()), mustUUID(req.GetTokenId()))
+	actor, token, err := parseActionIDs(req.GetActorId(), req.GetTokenId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return &Empty{}, s.launch.Approve(ctx, actor, token)
 }
 func (s *Server) RejectToken(ctx context.Context, req *RejectTokenRequest) (*Empty, error) {
-	return &Empty{}, s.launch.Reject(ctx, mustUUID(req.GetActorId()), mustUUID(req.GetTokenId()), req.GetReason())
+	actor, token, err := parseActionIDs(req.GetActorId(), req.GetTokenId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return &Empty{}, s.launch.Reject(ctx, actor, token, req.GetReason())
 }
 func (s *Server) PauseToken(ctx context.Context, req *PauseTokenRequest) (*Empty, error) {
-	return &Empty{}, s.launch.Pause(ctx, mustUUID(req.GetActorId()), mustUUID(req.GetTokenId()), req.GetReason())
+	actor, token, err := parseActionIDs(req.GetActorId(), req.GetTokenId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return &Empty{}, s.launch.Pause(ctx, actor, token, req.GetReason())
 }
 
 func (s *Server) QuoteBuy(ctx context.Context, req *QuoteBuyRequest) (*BuyQuoteResponse, error) {
-	q, err := s.launch.QuoteBuy(ctx, mustUUID(req.GetTokenId()), parseInt64(req.GetAmountInMinor()))
+	tokenID, err := parseUUID(req.GetTokenId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	amount, err := parseInt64(req.GetAmountInMinor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "amount_in_minor must be a valid int64")
+	}
+	q, err := s.launch.QuoteBuy(ctx, tokenID, amount)
 	if err != nil {
 		return nil, mapGRPCError(err)
 	}
 	return &BuyQuoteResponse{Quote: quoteProto(q)}, nil
 }
 func (s *Server) Buy(ctx context.Context, req *BuyRequest) (*BuyResultResponse, error) {
-	r, err := s.launch.Buy(ctx, mustUUID(req.GetUserId()), mustUUID(req.GetTokenId()), parseInt64(req.GetAmountInMinor()), req.GetClientId())
+	userID, tokenID, amount, err := parseTradeIDsAndAmount(req.GetUserId(), req.GetTokenId(), req.GetAmountInMinor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	r, err := s.launch.Buy(ctx, userID, tokenID, amount, req.GetClientId())
 	if err != nil {
 		return nil, mapGRPCError(err)
 	}
 	return resultProto(r)
 }
 func (s *Server) Sell(ctx context.Context, req *SellRequest) (*BuyResultResponse, error) {
-	r, err := s.launch.Sell(ctx, mustUUID(req.GetUserId()), mustUUID(req.GetTokenId()), parseInt64(req.GetAmountInMinor()), req.GetClientId())
+	userID, tokenID, amount, err := parseTradeIDsAndAmount(req.GetUserId(), req.GetTokenId(), req.GetAmountInMinor())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	r, err := s.launch.Sell(ctx, userID, tokenID, amount, req.GetClientId())
 	if err != nil {
 		return nil, mapGRPCError(err)
 	}
@@ -125,8 +163,53 @@ func stringPtr(v *string) string {
 	}
 	return *v
 }
-func parseInt64(v string) int64   { n, _ := strconv.ParseInt(v, 10, 64); return n }
-func mustUUID(v string) uuid.UUID { id, _ := uuid.Parse(v); return id }
+func parseInt64(v string) (int64, error) {
+	value := strings.TrimSpace(v)
+	if value == "" {
+		return 0, fmt.Errorf("value must not be empty")
+	}
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("value must be a valid int64")
+	}
+	return n, nil
+}
+
+func parseUUID(v string) (uuid.UUID, error) {
+	id, err := uuid.Parse(strings.TrimSpace(v))
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("value must be a valid UUID")
+	}
+	return id, nil
+}
+
+func parseActionIDs(actorValue, tokenValue string) (uuid.UUID, uuid.UUID, error) {
+	actor, err := parseUUID(actorValue)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("actor_id must be a valid UUID")
+	}
+	token, err := parseUUID(tokenValue)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("token_id must be a valid UUID")
+	}
+	return actor, token, nil
+}
+
+func parseTradeIDsAndAmount(userValue, tokenValue, amountValue string) (uuid.UUID, uuid.UUID, int64, error) {
+	userID, err := parseUUID(userValue)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, 0, fmt.Errorf("user_id must be a valid UUID")
+	}
+	tokenID, err := parseUUID(tokenValue)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, 0, fmt.Errorf("token_id must be a valid UUID")
+	}
+	amount, err := parseInt64(amountValue)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, 0, fmt.Errorf("amount_in_minor must be a valid int64")
+	}
+	return userID, tokenID, amount, nil
+}
 func mapGRPCError(err error) error {
 	if err == nil {
 		return nil

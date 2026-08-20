@@ -31,24 +31,33 @@ interface Order {
 interface Position {
   symbol: string;
   name: string;
-  amount: number;
-  price: number;
-  value: number;
-  pnl: number;
-  pnlPct: number;
+  amount: string | number;
+  price: string | number;
+  value: string | number;
+  pnl: string | number;
+  pnlPct: string | number;
+}
+
+interface WalletAccount {
+  currency: string;
+  label?: string | null;
+  total_minor: string;
+  available_minor: string;
+  pending_minor: string;
+  reserved_minor: string;
 }
 
 export default function PortfolioPage() {
   const { user, loading } = useAuth();
-  const { data: positions, isLoading, isError: positionsError } = useQuery({
-    queryKey: ['positions'],
-    queryFn: () => api.get<Position[]>('/api/portfolio/positions'),
+  const { data: walletSummary, isLoading: summaryLoading, isError: summaryError } = useQuery({
+    queryKey: ['wallet-summary'],
+    queryFn: () => api.get<{ accounts: WalletAccount[] }>('/api/wallet/summary'),
     enabled: !!user,
   });
 
   const { data: balance, isError: balanceError } = useQuery({
     queryKey: ['rial-balance'],
-    queryFn: () => api.get<{ available: number; total: number }>('/api/wallet/balance', { query: { asset: 'RIAL' } }),
+    queryFn: () => api.get<{ available: string; pending: string; reserved: string; currency: string }>('/api/wallet/balance', { query: { asset: 'RIAL' } }),
     enabled: !!user,
   });
 
@@ -74,8 +83,13 @@ export default function PortfolioPage() {
     );
   }
 
-  const totalValue = (balance?.total || 0) + (positions || []).reduce((s, p) => s + p.value, 0);
-  const totalPnl = (positions || []).reduce((s, p) => s + p.pnl, 0);
+  const positions: Position[] = (walletSummary?.accounts ?? [])
+    .filter((account) => account.currency !== 'RIAL')
+    .map((account) => ({ symbol: account.currency, name: account.label || account.currency, amount: account.total_minor, price: 'unavailable', value: 'unavailable', pnl: 'unavailable', pnlPct: 'unavailable' }));
+  const hasPortfolioData = !summaryError && !balanceError && Boolean(balance && walletSummary);
+  const valuationAvailable = hasPortfolioData && positions.every((p) => typeof p.value === 'number' && Number.isFinite(p.value));
+  const totalValue = toDisplayNumber(balance?.available) + (valuationAvailable ? positions.reduce((s, p) => s + toDisplayNumber(p.value), 0) : 0);
+  const totalPnl = valuationAvailable ? positions.reduce((s, p) => s + toDisplayNumber(p.pnl), 0) : 0;
 
   return (
     <div className="container py-8 space-y-6">
@@ -94,23 +108,25 @@ export default function PortfolioPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-sm text-muted-foreground">Total balance</div>
-            <div className="text-3xl font-bold mt-1">{formatNumber(totalValue)} RIAL</div>
-            <div className={`text-xs mt-1 ${totalPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-              {totalPnl >= 0 ? '+' : ''}{formatNumber(Math.abs(totalPnl))} RIAL ({formatPercent((totalPnl / Math.max(1, totalValue - totalPnl)) * 100)})
-            </div>
+            {valuationAvailable ? <>
+              <div className="text-3xl font-bold mt-1">{formatNumber(totalValue)} RIAL</div>
+              <div className={`text-xs mt-1 ${totalPnl >= 0 ? 'text-success' : 'text-destructive'}`}>
+                {totalPnl >= 0 ? '+' : ''}{formatNumber(Math.abs(totalPnl))} RIAL ({formatPercent((totalPnl / Math.max(1, totalValue - totalPnl)) * 100)})
+              </div>
+            </> : hasPortfolioData ? <div className="text-sm text-muted-foreground mt-2">Portfolio valuation unavailable until live market prices are available</div> : <div className="text-sm text-destructive mt-2">Portfolio data unavailable</div>}
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5">
             <div className="text-sm text-muted-foreground">Available (﷼)</div>
-            {balanceError ? <div className="text-sm text-destructive mt-2">Balance unavailable</div> : <div className="text-3xl font-bold mt-1">{formatNumber(balance?.available || 0)}</div>}
+            {balanceError || !balance ? <div className="text-sm text-destructive mt-2">Balance unavailable</div> : <div className="text-3xl font-bold mt-1">{balance.available}</div>}
             <div className="text-xs text-muted-foreground mt-1">Settlement token</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5">
             <div className="text-sm text-muted-foreground">Positions</div>
-            <div className="text-3xl font-bold mt-1">{(positions || []).length}</div>
+            {summaryError ? <div className="text-sm text-destructive mt-2">Unavailable</div> : summaryLoading ? <Skeleton className="h-9 w-16" /> : <div className="text-3xl font-bold mt-1">{positions.length}</div>}
             <div className="text-xs text-muted-foreground mt-1">Across all markets</div>
           </CardContent>
         </Card>
@@ -123,7 +139,7 @@ export default function PortfolioPage() {
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="holdings" className="mt-3">
-          {isLoading ? <Skeleton className="h-64" /> : positionsError ? <Unavailable label="Portfolio positions are temporarily unavailable" /> : <Holdings positions={positions || []} />}
+          {summaryLoading ? <Skeleton className="h-64" /> : summaryError ? <Unavailable label="Wallet accounts are temporarily unavailable" /> : <Holdings positions={positions} />}
         </TabsContent>
         <TabsContent value="orders" className="mt-3">
           {ordersQuery.isLoading ? <Skeleton className="h-64" /> : ordersQuery.isError ? <Unavailable label="Open orders are temporarily unavailable" /> : <Orders orders={(ordersQuery.data || []).filter((order) => !['filled', 'cancelled', 'rejected'].includes(order.status))} onCancel={(id) => cancelOrder.mutate(id)} cancelling={cancelOrder.isPending} />}
@@ -153,6 +169,16 @@ function Orders({ orders, onCancel, cancelling, history = false }: { orders: Ord
   })}</CardContent></Card>;
 }
 
+function toDisplayNumber(value: string | number | undefined) {
+  return typeof value === 'number' ? value : Number(value ?? 0);
+}
+
+function displayMetric(value: string | number | undefined, fractionDigits?: number) {
+  if (value === undefined || value === null || value === '') return '—';
+  if (typeof value === 'string') return value;
+  return formatNumber(value, fractionDigits === undefined ? undefined : { maximumFractionDigits: fractionDigits });
+}
+
 function Holdings({ positions }: { positions: Position[] }) {
   return (
     <Card>
@@ -174,11 +200,11 @@ function Holdings({ positions }: { positions: Position[] }) {
               <div className="font-medium">{p.symbol}</div>
               <div className="text-xs text-muted-foreground">{p.name}</div>
             </div>
-            <div className="text-right font-mono">{formatNumber(p.amount, { maximumFractionDigits: 2 })}</div>
-            <div className="text-right font-mono">{p.price.toFixed(4)} RIAL</div>
-            <div className="text-right font-mono">{formatNumber(p.value)} RIAL</div>
-            <div className={`text-right font-mono ${p.pnl >= 0 ? 'text-success' : 'text-destructive'}`}>
-              {p.pnl >= 0 ? '+' : ''}{formatNumber(Math.abs(p.pnl))} RIAL ({formatPercent(p.pnlPct)})
+            <div className="text-right font-mono">{displayMetric(p.amount, 2)}</div>
+            <div className="text-right font-mono">{displayMetric(p.price, 4)} RIAL</div>
+            <div className="text-right font-mono">{displayMetric(p.value)} RIAL</div>
+            <div className={`text-right font-mono ${toDisplayNumber(p.pnl) >= 0 ? 'text-success' : 'text-destructive'}`}>
+              {toDisplayNumber(p.pnl) >= 0 ? '+' : ''}{displayMetric(Math.abs(toDisplayNumber(p.pnl)))} RIAL ({formatPercent(toDisplayNumber(p.pnlPct))})
             </div>
           </Link>
         ))}
