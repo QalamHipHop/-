@@ -211,7 +211,11 @@ type quoteReq struct {
 }
 
 func (s *Server) quoteBuy(w http.ResponseWriter, r *http.Request) {
-	id, _ := uuid.Parse(mux.Vars(r)["id"])
+	id, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil {
+		writeErr(w, errors.New("INVALID_ID"))
+		return
+	}
 	var body quoteReq
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, err)
@@ -231,7 +235,11 @@ type buyReq struct {
 }
 
 func (s *Server) buy(w http.ResponseWriter, r *http.Request) {
-	id, _ := uuid.Parse(mux.Vars(r)["id"])
+	id, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil {
+		writeErr(w, errors.New("INVALID_ID"))
+		return
+	}
 	var body buyReq
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, err)
@@ -251,7 +259,11 @@ func (s *Server) buy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sell(w http.ResponseWriter, r *http.Request) {
-	id, _ := uuid.Parse(mux.Vars(r)["id"])
+	id, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil {
+		writeErr(w, errors.New("INVALID_ID"))
+		return
+	}
 	var body struct {
 		AmountInMinor int64  `json:"amount_in_minor"`
 		ClientID      string `json:"client_id"`

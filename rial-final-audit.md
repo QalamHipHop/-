@@ -12,3 +12,5 @@
 ۲. frontend portfolio به endpoint ناموجود `/api/portfolio/positions` وصل بود و در خطا کارت‌های summary را به صفر تبدیل می‌کرد. اکنون summary از `/api/wallet/summary` واقعی خوانده می‌شود، token accountهای واقعی نمایش داده می‌شوند، و تا وقتی market price واقعی وجود ندارد valuation/P&L صریحاً unavailable است؛ هیچ price یا position مصنوعی ساخته نمی‌شود.
 
 نتیجهٔ validation: `go test ./...` در launchpad و TypeScript/lint/production build فرانت‌اند موفق شد.
+
+۳. launchpad HTTP API نیز در quote/buy/sell invalid path UUID را silent به `uuid.Nil` تبدیل می‌کرد. اکنون هر سه handler پیش از decode/domain call خطای `INVALID_ID` برمی‌گردانند. `gofmt` و `go test ./...` launchpad پس از اصلاح موفق شدند.
