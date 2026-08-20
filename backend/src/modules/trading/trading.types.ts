@@ -56,6 +56,7 @@ export interface Trade {
   settlement_last_error?: string | null;
   settlement_tx_id?: string | null;
   settled_at?: Date | null;
+  settlement_claim_token?: string | null;
   created_at: Date;
 }
 

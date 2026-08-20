@@ -369,12 +369,13 @@ export class TradingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async settleAndMarkTrade(trade: Trade, market: Market): Promise<void> {
-    if (!(await this.repo.beginTradeSettlement(trade.id))) return;
+    const claimToken = await this.repo.beginTradeSettlement(trade.id);
+    if (!claimToken) return;
     try {
       const txId = await this.settleWalletTrade(trade, market);
-      await this.repo.markTradeSettlementSucceeded(trade.id, txId);
+      await this.repo.markTradeSettlementSucceeded(trade.id, txId, claimToken);
     } catch (error) {
-      await this.repo.markTradeSettlementFailed(trade.id, (error as Error).message);
+      await this.repo.markTradeSettlementFailed(trade.id, (error as Error).message, claimToken);
       this.logger.error(`trade settlement deferred trade=${trade.id}: ${(error as Error).message}`);
     }
   }
@@ -388,10 +389,11 @@ export class TradingService implements OnModuleInit, OnModuleDestroy {
         const market = await this.repo.findMarket(trade.market_id);
         if (!market) throw new Error(`market missing: ${trade.market_id}`);
         const txId = await this.settleWalletTrade(trade, market);
-        await this.repo.markTradeSettlementSucceeded(trade.id, txId);
-        recovered += 1;
+        if (await this.repo.markTradeSettlementSucceeded(trade.id, txId, trade.settlement_claim_token ?? '')) {
+          recovered += 1;
+        }
       } catch (error) {
-        await this.repo.markTradeSettlementFailed(trade.id, (error as Error).message);
+        await this.repo.markTradeSettlementFailed(trade.id, (error as Error).message, trade.settlement_claim_token ?? '');
         this.logger.error(`trade settlement retry failed trade=${trade.id}: ${(error as Error).message}`);
       }
     }

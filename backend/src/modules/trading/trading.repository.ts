@@ -132,7 +132,7 @@ export class TradingRepository {
          )
          UPDATE trading.trades t
          SET settlement_status = 'processing', settlement_attempts = t.settlement_attempts + 1,
-             settlement_processing_started_at = now()
+             settlement_processing_started_at = now(), settlement_claim_token = gen_random_uuid()::text
          FROM candidates c WHERE t.id = c.id RETURNING t.*`,
         [limit],
       );
@@ -140,32 +140,34 @@ export class TradingRepository {
     });
   }
 
-  async beginTradeSettlement(tradeId: string): Promise<boolean> {
-    const r = await this.db.query(
+  async beginTradeSettlement(tradeId: string): Promise<string | null> {
+    const r = await this.db.query<{ settlement_claim_token: string }>(
       `UPDATE trading.trades SET settlement_status = 'processing', settlement_attempts = settlement_attempts + 1,
-          settlement_processing_started_at = now()
-       WHERE id = $1 AND settlement_status IN ('pending','failed') RETURNING id`,
+          settlement_processing_started_at = now(), settlement_claim_token = gen_random_uuid()::text
+       WHERE id = $1 AND settlement_status IN ('pending','failed') RETURNING settlement_claim_token`,
       [tradeId],
     );
-    return r.rows.length > 0;
+    return r.rows[0]?.settlement_claim_token ?? null;
   }
 
-  async markTradeSettlementSucceeded(tradeId: string, txId: string): Promise<void> {
-    await this.db.query(
-      `UPDATE trading.trades SET settlement_status = 'succeeded', settlement_tx_id = $2, settled_at = now(), settlement_processing_started_at = NULL, settlement_last_error = NULL
-       WHERE id = $1 AND settlement_status = 'processing'`,
-      [tradeId, txId],
+  async markTradeSettlementSucceeded(tradeId: string, txId: string, claimToken: string): Promise<boolean> {
+    const r = await this.db.query(
+      `UPDATE trading.trades SET settlement_status = 'succeeded', settlement_tx_id = $2, settled_at = now(), settlement_processing_started_at = NULL, settlement_claim_token = NULL, settlement_last_error = NULL
+       WHERE id = $1 AND settlement_status = 'processing' AND settlement_claim_token = $3`,
+      [tradeId, txId, claimToken],
     );
+    return r.rowCount === 1;
   }
 
-  async markTradeSettlementFailed(tradeId: string, error: string, maxBackoffSeconds = 300): Promise<void> {
-    await this.db.query(
+  async markTradeSettlementFailed(tradeId: string, error: string, claimToken: string, maxBackoffSeconds = 300): Promise<boolean> {
+    const r = await this.db.query(
       `UPDATE trading.trades
-       SET settlement_status = 'failed', settlement_processing_started_at = NULL, settlement_last_error = left($2, 2000),
-           settlement_next_attempt_at = now() + LEAST(make_interval(secs => GREATEST(5, power(2::numeric, LEAST(settlement_attempts, 8))::int)), make_interval(secs => $3))
-       WHERE id = $1 AND settlement_status = 'processing'`,
-      [tradeId, error, maxBackoffSeconds],
+       SET settlement_status = 'failed', settlement_processing_started_at = NULL, settlement_claim_token = NULL, settlement_last_error = left($2, 2000),
+           settlement_next_attempt_at = now() + LEAST(make_interval(secs => GREATEST(5, power(2::numeric, LEAST(settlement_attempts, 8))::int)), make_interval(secs => $4))
+       WHERE id = $1 AND settlement_status = 'processing' AND settlement_claim_token = $3`,
+      [tradeId, error, claimToken, maxBackoffSeconds],
     );
+    return r.rowCount === 1;
   }
 
   async listTrades(marketId: string, opts: { limit?: number; since?: Date } = {}): Promise<Trade[]> {
