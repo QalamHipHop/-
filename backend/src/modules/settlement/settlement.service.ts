@@ -25,7 +25,7 @@ import { RateProvider } from './providers/rate-provider.interface';
 
 export interface RateSnapshot {
   symbol: string;
-  usdPerUnit: number;
+  usdPerUnit: string;
   source: string;
   fetchedAt: string;
   stale: boolean;
@@ -119,7 +119,7 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
 
   async convertUsdToRial(usd: string | number): Promise<bigint> {
     const r = await this.currentRate();
-    if (r.stale || r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
+    if (r.stale || !isPositiveDecimal(r.usdPerUnit)) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
     const usdFraction = parseDecimal(String(usd));
     const rateFraction = parseDecimal(String(r.usdPerUnit));
     if (usdFraction.numerator < 0n || rateFraction.numerator <= 0n) throw new Error('amount and rate must be positive');
@@ -128,7 +128,7 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
 
   async convertRialToUsd(minor: bigint): Promise<string> {
     const r = await this.currentRate();
-    if (r.stale || r.usdPerUnit <= 0) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
+    if (r.stale || !isPositiveDecimal(r.usdPerUnit)) throw new InternalServerErrorException({ code: 'RATE_UNAVAILABLE', message: 'no fresh exchange rate available' });
     const rateFraction = parseDecimal(String(r.usdPerUnit));
     return formatFraction(minor * rateFraction.numerator, SCALE * rateFraction.denominator, 8);
   }
@@ -158,12 +158,12 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
 
   private async refreshRate(): Promise<RateSnapshot> {
     const cfg = this.config.get<SettlementConfig>('settlement')!;
-    let chosen: { provider: RateProvider; value: number } | null = null;
+    let chosen: { provider: RateProvider; value: string } | null = null;
     for (const p of this.providers) {
       try {
         if (!(await p.healthy())) continue;
         const v = await p.quote();
-        if (v && Number.isFinite(v) && v > 0) { chosen = { provider: p, value: v }; break; }
+        if (v && isPositiveDecimal(v)) { chosen = { provider: p, value: v }; break; }
       } catch (e) {
         this.logger.warn(`provider ${p.name} failed: ${(e as Error).message}`);
       }
@@ -175,7 +175,7 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
       const cached = await this.readCache();
       if (cached) return { ...cached, stale: true };
       const zero: RateSnapshot = {
-        symbol: cfg.symbol, usdPerUnit: 0, source: 'none',
+        symbol: cfg.symbol, usdPerUnit: '0', source: 'none',
         fetchedAt: new Date().toISOString(), stale: true,
       };
       return zero;
@@ -200,7 +200,7 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
       const cfg = this.config.get<SettlementConfig>('settlement')!;
       return {
         symbol: this.symbol,
-        usdPerUnit: Number(v),
+        usdPerUnit: v,
         source: 'cache',
         fetchedAt: ts,
         stale: ageSec >= cfg.rateRefreshSec,
@@ -214,7 +214,7 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
   private async writeCache(snap: RateSnapshot): Promise<void> {
     try {
       const ttl = Math.max(60, this.config.get<SettlementConfig>('settlement')!.rateStaleAfterSec);
-      await this.redis.set(RATE_KEY, snap.usdPerUnit.toString(), 'EX', ttl);
+      await this.redis.set(RATE_KEY, snap.usdPerUnit, 'EX', ttl);
       await this.redis.set(RATE_TS_KEY, snap.fetchedAt, 'EX', ttl);
     } catch (e) {
       this.logger.warn(`writeCache failed: ${(e as Error).message}`);
@@ -224,6 +224,10 @@ export class SettlementService implements OnModuleInit, OnModuleDestroy {
 
 
 type Fraction = { numerator: bigint; denominator: bigint };
+
+function isPositiveDecimal(value: string): boolean {
+  return /^\d+(\.\d+)?$/.test(value.trim()) && value.trim() !== '0';
+}
 
 function parseDecimal(raw: string): Fraction {
   const value = raw.trim();

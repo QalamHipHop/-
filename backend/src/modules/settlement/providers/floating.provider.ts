@@ -24,20 +24,19 @@ export class FloatingRateProvider implements RateProvider {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  async quote(): Promise<number | null> {
+  async quote(): Promise<string | null> {
     const cfg = this.config.get<SettlementConfig>('settlement')!;
     if (cfg.rateStrategy !== 'floating') return null;
 
     try {
       const [rateRaw, updatedRaw] = await this.redis.mget(RATE_KEY, UPDATED_KEY);
-      const rate = Number(rateRaw);
       const updatedAt = Number(updatedRaw);
       const now = Math.floor(Date.now() / 1000);
-      if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(updatedAt) || now - updatedAt > cfg.rateStaleAfterSec) {
+      if (!rateRaw || !isPositiveDecimal(rateRaw) || !Number.isFinite(updatedAt) || now - updatedAt > cfg.rateStaleAfterSec) {
         this.logger.warn('floating quote unavailable: TWAP is missing or stale');
         return null;
       }
-      return rate;
+      return rateRaw;
     } catch (e) {
       this.logger.warn(`floating quote failed: ${(e as Error).message}`);
       return null;
@@ -47,4 +46,8 @@ export class FloatingRateProvider implements RateProvider {
   async healthy(): Promise<boolean> {
     return (await this.quote()) !== null;
   }
+}
+
+function isPositiveDecimal(value: string): boolean {
+  return /^\d+(\.\d+)?$/.test(value.trim()) && value.trim() !== '0';
 }

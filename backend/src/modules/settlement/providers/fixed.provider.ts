@@ -9,10 +9,11 @@ export class FixedRateProvider implements RateProvider {
   private readonly logger = new Logger(FixedRateProvider.name);
   constructor(private readonly config: ConfigService) {}
 
-  async quote(): Promise<number | null> {
+  async quote(): Promise<string | null> {
     const cfg = this.config.get<SettlementConfig>('settlement')!;
     if (cfg.rateStrategy !== 'fixed') return null;
-    return cfg.rateFixed;
+    const value = cfg.rateFixed?.trim() ?? '';
+    return /^\d+(\.\d+)?$/.test(value) && value !== '0' ? value : null;
   }
 
   async healthy(): Promise<boolean> {

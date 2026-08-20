@@ -22,7 +22,7 @@ describe('FloatingRateProvider', () => {
 
   it('returns only a fresh trusted TWAP and never mutates it', async () => {
     const { provider, redis } = makeProvider(['0.0000123', String(Math.floor(Date.now() / 1000))]);
-    await expect(provider.quote()).resolves.toBeCloseTo(0.0000123);
+    await expect(provider.quote()).resolves.toBe('0.0000123');
     expect(redis.set).not.toHaveBeenCalled();
   });
 });

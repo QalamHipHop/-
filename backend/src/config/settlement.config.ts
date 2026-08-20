@@ -11,7 +11,7 @@ export interface SettlementConfig {
   name: string;          // e.g. "﷼"
   decimals: number;      // minor units, always 8 internally
   rateStrategy: ExchangeRateStrategy;
-  rateFixed: number | null;     // USD per 1 RIAL
+  rateFixed: string | null;     // USD per 1 RIAL, decimal string
   rateExternalUrl: string | null;
   rateRefreshSec: number;
   rateStaleAfterSec: number;
@@ -32,7 +32,7 @@ export const settlementConfig = registerAs('settlement', (): SettlementConfig =>
     name: process.env.SETTLEMENT_TOKEN_NAME ?? '﷼',
     decimals: 8,
     rateStrategy: strategy,
-    rateFixed: process.env.EXCHANGE_RATE_FIXED ? Number(process.env.EXCHANGE_RATE_FIXED) : null,
+    rateFixed: process.env.EXCHANGE_RATE_FIXED?.trim() || null,
     rateExternalUrl: process.env.EXCHANGE_RATE_EXTERNAL_URL ?? null,
     rateRefreshSec: Number(process.env.EXCHANGE_RATE_REFRESH_SEC ?? 60),
     rateStaleAfterSec: Number(process.env.EXCHANGE_RATE_STALE_AFTER_SEC ?? 300),

@@ -11,7 +11,7 @@ const redisMock = {
   set: jest.fn().mockResolvedValue('OK'),
 };
 
-const fixedProvider: RateProvider = { name: 'fixed', quote: async () => 1, healthy: async () => true };
+const fixedProvider: RateProvider = { name: 'fixed', quote: async () => '1', healthy: async () => true };
 const floatingProvider: RateProvider = { name: 'floating', quote: async () => null, healthy: async () => false };
 const externalProvider: RateProvider = { name: 'external', quote: async () => null, healthy: async () => false };
 
@@ -35,7 +35,7 @@ describe('SettlementService', () => {
 
   it('uses the first healthy provider', async () => {
     const r = await svc.currentRate();
-    expect(r.usdPerUnit).toBe(1);
+    expect(r.usdPerUnit).toBe('1');
     expect(r.source).toBe('fixed');
     expect(r.stale).toBe(false);
   });
@@ -82,7 +82,7 @@ describe('SettlementService', () => {
     const now = new Date().toISOString();
     redisMock.mget.mockResolvedValueOnce(['0.5', now]);
     const r = await svc.currentRate();
-    expect(r.usdPerUnit).toBe(0.5);
+    expect(r.usdPerUnit).toBe('0.5');
     expect(r.source).toBe('cache');
     expect(r.stale).toBe(false);
   });

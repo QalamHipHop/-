@@ -20,23 +20,20 @@ export class ExternalRateProvider implements RateProvider {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  async quote(): Promise<number | null> {
+  async quote(): Promise<string | null> {
     const cfg = this.config.get<SettlementConfig>('settlement')!;
     if (cfg.rateStrategy !== 'external' || !cfg.rateExternalUrl) return null;
 
     const cached = await this.redis.get(this.cacheKey);
-    if (cached) {
-      const v = Number(cached);
-      if (Number.isFinite(v) && v > 0) return v;
-    }
+    if (cached && isPositiveDecimal(cached)) return cached;
 
     try {
       const res = await firstValueFrom(this.http.get(cfg.rateExternalUrl, { timeout: 4_000 }));
-      const data = res.data as Record<string, unknown> | number;
-      const value = typeof data === 'number' ? data : Number((data as Record<string, unknown>).rate ?? NaN);
-      if (!Number.isFinite(value) || value <= 0) return null;
-      await this.redis.set(this.cacheKey, String(value), 'EX', cfg.rateRefreshSec);
-      return value;
+      const data = res.data as Record<string, unknown>;
+      const raw = typeof data === 'object' && data !== null ? data.rate : undefined;
+      if (typeof raw !== 'string' || !isPositiveDecimal(raw)) return null;
+      await this.redis.set(this.cacheKey, raw, 'EX', cfg.rateRefreshSec);
+      return raw;
     } catch (e) {
       this.logger.warn(`External rate fetch failed: ${(e as Error).message}`);
       return null;
@@ -46,4 +43,8 @@ export class ExternalRateProvider implements RateProvider {
   async healthy(): Promise<boolean> {
     return (await this.quote()) !== null;
   }
+}
+
+function isPositiveDecimal(value: string): boolean {
+  return /^\d+(\.\d+)?$/.test(value.trim()) && value.trim() !== '0';
 }
