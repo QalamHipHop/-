@@ -36,7 +36,7 @@ type tradeSettlementReq struct {
 
 type creditReq struct {
 	UserID         string         `json:"user_id" binding:"required,uuid"`
-	Amount         int64          `json:"amount" binding:"required,gt=0"`
+	Amount         string         `json:"amount" binding:"required"`
 	Type           string         `json:"type" binding:"required"`
 	Reference      string         `json:"reference"`
 	IdempotencyKey string         `json:"idempotency_key" binding:"required,min=8,max=128"`
@@ -45,7 +45,7 @@ type creditReq struct {
 
 type debitReq struct {
 	UserID         string         `json:"user_id" binding:"required,uuid"`
-	Amount         int64          `json:"amount" binding:"required,gt=0"`
+	Amount         string         `json:"amount" binding:"required"`
 	Type           string         `json:"type" binding:"required"`
 	Reference      string         `json:"reference"`
 	IdempotencyKey string         `json:"idempotency_key" binding:"required,min=8,max=128"`
@@ -61,7 +61,7 @@ type escrowReq struct {
 }
 
 type internalLedgerReq struct {
-	Amount         int64          `json:"amount" binding:"required,gt=0"`
+	Amount         string         `json:"amount" binding:"required"`
 	Type           string         `json:"type" binding:"required,oneof=trade fee refund"`
 	Reference      string         `json:"reference"`
 	IdempotencyKey string         `json:"idempotency_key" binding:"required,min=8,max=128"`
@@ -71,7 +71,7 @@ type internalLedgerReq struct {
 type transferReq struct {
 	FromUserID     string         `json:"from_user_id" binding:"required,uuid"`
 	ToUserID       string         `json:"to_user_id" binding:"required,uuid"`
-	Amount         int64          `json:"amount" binding:"required,gt=0"`
+	Amount         string         `json:"amount" binding:"required"`
 	Reference      string         `json:"reference"`
 	Actor          string         `json:"actor" binding:"required"`
 	IdempotencyKey string         `json:"idempotency_key" binding:"required,min=8,max=128"`
@@ -92,7 +92,7 @@ type confirmWithdrawalDestinationReq struct {
 
 type withdrawReq struct {
 	UserID         string `json:"user_id" binding:"required,uuid"`
-	Amount         int64  `json:"amount" binding:"required,gt=0"`
+	Amount         string `json:"amount" binding:"required"`
 	Chain          string `json:"chain" binding:"required,oneof=evm solana btc iban"`
 	Destination    string `json:"destination" binding:"required"`
 	IdempotencyKey string `json:"idempotency_key" binding:"required,min=8,max=128"`
@@ -243,13 +243,18 @@ func (h *handler) credit(c *gin.Context) {
 		return
 	}
 	uid, _ := uuid.Parse(req.UserID)
+	amount, err := parsePositiveInt64(req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_amount"})
+		return
+	}
 	acc, err := h.svc.GetOrCreateUserAccount(c.Request.Context(), uid)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 	tx, err := h.svc.Credit(c.Request.Context(), ledger.CreditParams{
-		AccountID: acc.ID, Amount: req.Amount, Type: domainTxType(req.Type),
+		AccountID: acc.ID, Amount: amount, Type: domainTxType(req.Type),
 		Reference: req.Reference, Metadata: req.Metadata, Actor: "api",
 		IdempotencyKey: req.IdempotencyKey,
 	})
@@ -311,13 +316,18 @@ func (h *handler) debit(c *gin.Context) {
 		return
 	}
 	uid, _ := uuid.Parse(req.UserID)
+	amount, err := parsePositiveInt64(req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_amount"})
+		return
+	}
 	acc, err := h.svc.GetOrCreateUserAccount(c.Request.Context(), uid)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 	tx, err := h.svc.Debit(c.Request.Context(), ledger.DebitParams{
-		AccountID: acc.ID, Amount: req.Amount, Type: domainTxType(req.Type),
+		AccountID: acc.ID, Amount: amount, Type: domainTxType(req.Type),
 		Reference: req.Reference, Metadata: req.Metadata, Actor: "api",
 		IdempotencyKey: req.IdempotencyKey,
 	})
@@ -350,13 +360,18 @@ func (h *handler) creditInternal(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	amount, err := parsePositiveInt64(req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_amount"})
+		return
+	}
 	acc, err := h.svc.EnsureInternalAccount(c.Request.Context(), kind)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	tx, err := h.svc.Credit(c.Request.Context(), ledger.CreditParams{
-		AccountID: acc.ID, Amount: req.Amount, Type: domainTxType(req.Type), Reference: req.Reference,
+		AccountID: acc.ID, Amount: amount, Type: domainTxType(req.Type), Reference: req.Reference,
 		Metadata: req.Metadata, Actor: "internal:" + string(kind), IdempotencyKey: req.IdempotencyKey,
 	})
 	if err != nil {
@@ -377,13 +392,18 @@ func (h *handler) debitInternal(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	amount, err := parsePositiveInt64(req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_amount"})
+		return
+	}
 	acc, err := h.svc.EnsureInternalAccount(c.Request.Context(), kind)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	tx, err := h.svc.Debit(c.Request.Context(), ledger.DebitParams{
-		AccountID: acc.ID, Amount: req.Amount, Type: domainTxType(req.Type), Reference: req.Reference,
+		AccountID: acc.ID, Amount: amount, Type: domainTxType(req.Type), Reference: req.Reference,
 		Metadata: req.Metadata, Actor: "internal:" + string(kind), IdempotencyKey: req.IdempotencyKey,
 	})
 	if err != nil {
@@ -399,6 +419,11 @@ func (h *handler) transfer(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+	amount, err := parsePositiveInt64(req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_amount"})
+		return
+	}
 	fromUID, _ := uuid.Parse(req.FromUserID)
 	toUID, _ := uuid.Parse(req.ToUserID)
 	from, err := h.svc.GetOrCreateUserAccount(c.Request.Context(), fromUID)
@@ -411,7 +436,7 @@ func (h *handler) transfer(c *gin.Context) {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.Transfer(c.Request.Context(), from.ID, to.ID, req.Amount, req.Reference, req.Actor, req.IdempotencyKey, req.Metadata); err != nil {
+	if err := h.svc.Transfer(c.Request.Context(), from.ID, to.ID, amount, req.Reference, req.Actor, req.IdempotencyKey, req.Metadata); err != nil {
 		c.JSON(mapErrToStatus(err), gin.H{"error": err.Error()})
 		return
 	}
@@ -516,8 +541,13 @@ func (h *handler) withdraw(c *gin.Context) {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
+	amount, err := parsePositiveInt64(req.Amount)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_amount"})
+		return
+	}
 	wdSvc := ledger.NewWithdrawalService(h.svc, h.svc.Custody(), 2) // 2-of-3 until policy is configurable
-	wd, err := wdSvc.Request(c.Request.Context(), acc.ID, req.Amount, req.Chain, req.Destination, req.IdempotencyKey)
+	wd, err := wdSvc.Request(c.Request.Context(), acc.ID, amount, req.Chain, req.Destination, req.IdempotencyKey)
 	if err != nil {
 		c.JSON(mapErrToStatus(err), gin.H{"error": err.Error()})
 		return
