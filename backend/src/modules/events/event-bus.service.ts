@@ -18,6 +18,7 @@ export class EventBusService implements OnModuleInit {
   private readonly localSubs = new Map<string, Set<Handler>>();
   private readonly remoteSubs = new Map<string, JetStreamSubscription>();
   private jsAvailable = true;
+  private readonly production = process.env.NODE_ENV === 'production';
 
   constructor(
     @Inject(NATS_JETSTREAM) private readonly js: JetStreamClient | null,
@@ -25,19 +26,28 @@ export class EventBusService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    if (!this.js) { this.jsAvailable = false; return; }
-    // Nothing to do here; subscriptions are lazy on first .subscribe()
+    if (!this.js) {
+      this.jsAvailable = false;
+      if (this.production) throw new Error('NATS JetStream is required in production');
+      return;
+    }
+    // Subscriptions are lazy on first .subscribe().
   }
 
   async publish(subject: string, payload: unknown, opts: { msgId?: string } = {}): Promise<void> {
     const body = this.sc.encode(JSON.stringify({ ts: new Date().toISOString(), payload }));
-    // local fan-out first (always)
-    this.fanoutLocal(subject, payload);
-    if (!this.jsAvailable || !this.js) return;
+    if (!this.jsAvailable || !this.js) {
+      if (this.production) throw new Error('NATS JetStream unavailable in production');
+      this.fanoutLocal(subject, payload);
+      return;
+    }
     try {
       await this.js.publish(subject, body, { msgID: opts.msgId });
+      if (!this.production) this.fanoutLocal(subject, payload);
     } catch (e) {
-      this.logger.warn(`nats publish failed on ${subject} (kept local): ${(e as Error).message}`);
+      if (this.production) throw e;
+      this.logger.warn(`nats publish failed on ${subject}; using local development fanout: ${(e as Error).message}`);
+      this.fanoutLocal(subject, payload);
     }
   }
 
@@ -45,12 +55,14 @@ export class EventBusService implements OnModuleInit {
     if (!this.jsAvailable || !this.js) throw new Error('NATS JetStream unavailable');
     const body = this.sc.encode(JSON.stringify({ ts: new Date().toISOString(), payload }));
     await this.js.publish(subject, body, { msgID: msgId });
-    this.fanoutLocal(subject, payload);
+    if (!this.production) this.fanoutLocal(subject, payload);
   }
 
   async subscribe(subject: string, handler: Handler): Promise<() => void> {
-    if (!this.localSubs.has(subject)) this.localSubs.set(subject, new Set());
-    this.localSubs.get(subject)!.add(handler);
+    if (!this.production) {
+      if (!this.localSubs.has(subject)) this.localSubs.set(subject, new Set());
+      this.localSubs.get(subject)!.add(handler);
+    }
     if (this.jsAvailable && this.js && !this.remoteSubs.has(subject)) {
       try {
         const nats = this.config.get<NatsConfig>('nats');
@@ -77,8 +89,15 @@ export class EventBusService implements OnModuleInit {
           }
         })().catch((e) => this.logger.error(`sub loop ${subject}: ${(e as Error).message}`));
       } catch (e) {
+        if (this.production) throw e;
         this.logger.warn(`nats subscribe failed for ${subject}: ${(e as Error).message}`);
       }
+    } else if (this.production) {
+      throw new Error(`NATS JetStream unavailable while subscribing to ${subject}`);
+    }
+    if (this.production) {
+      if (!this.localSubs.has(subject)) this.localSubs.set(subject, new Set());
+      this.localSubs.get(subject)!.add(handler);
     }
     return () => {
       this.localSubs.get(subject)?.delete(handler);
