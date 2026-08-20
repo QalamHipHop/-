@@ -21,8 +21,10 @@ function solanaDisabledResponse() {
   );
 }
 
-function solanaEnabled() {
-  return process.env.RIAL_ONLY_MODE === 'false' && process.env.ENABLE_SOLANA_MAINNET === 'true';
+// RIAL is an internal-only network. External chain minting is intentionally
+// retained as a compatibility route but is never executable in any environment.
+function solanaEnabled(): false {
+  return false;
 }
 
 type MintPlanRequest = {

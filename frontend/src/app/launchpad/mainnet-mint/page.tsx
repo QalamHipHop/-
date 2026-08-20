@@ -4,9 +4,9 @@ import { useMemo, useState } from 'react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 
 const DEFAULT_OWNER = '23QPN8TtY3p79gVRjqWghuFRb5XGpvMS3Dp8nVHuZAGG';
+const EXTERNAL_MINT_ENABLED = false;
 
 type MintPlan = {
   network: string;
@@ -44,9 +44,16 @@ export default function MainnetMintPage() {
   const [status, setStatus] = useState<string>('No transaction has been created or broadcast.');
   const [busy, setBusy] = useState(false);
   const costSol = useMemo(() => plan ? (Number(plan.cost.mintRentLamports) + Number(plan.cost.estimatedNetworkFeeLamports ?? 0)) / 1_000_000_000 : null, [plan]);
+  // Legacy external-chain handlers remain in source for compatibility, but the
+  // feature flag is permanently disabled for the internal-only RIAL product.
+  void owner;
+  void setOwner;
+  void busy;
+  void buildPlan;
+  void signWithPhantom;
 
   async function buildPlan() {
-    setBusy(true); setStatus('Building a zero-supply Mainnet transaction plan…'); setPlan(null);
+    setBusy(true); setStatus('External networks are disabled. Use the internal RIAL launchpad flow.'); setPlan(null);
     try {
       const response = await fetch('/api/solana/mint-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner, decimals: 8 }) });
       const data = await response.json() as MintPlan & { error?: string };
@@ -80,9 +87,9 @@ export default function MainnetMintPage() {
 
   return (
     <div className="container max-w-3xl py-10 space-y-5">
-      <div><h1 className="text-3xl font-bold">Mainnet Mint Signing Ceremony</h1><p className="mt-2 text-muted-foreground">This page builds a zero-supply SPL mint plan. Your private key and seed phrase never leave Phantom.</p></div>
-      <Card><CardContent className="p-5 space-y-4"><label className="text-sm font-medium">Owner public address</label><Input value={owner} onChange={(event) => setOwner(event.target.value.trim())} spellCheck={false} /><div className="flex gap-3"><Button onClick={buildPlan} disabled={busy}>Build unsigned plan</Button>{plan && <Button variant="destructive" onClick={signWithPhantom} disabled={busy}>Review in Phantom and sign</Button>}</div><p className="text-sm text-muted-foreground">{status}</p></CardContent></Card>
-      {plan && <Card><CardContent className="p-5 space-y-4"><h2 className="font-semibold">Exact plan to approve</h2><div className="grid gap-3 text-sm md:grid-cols-2"><Fact label="Network" value={plan.network} /><Fact label="Mint address" value={plan.mintAddress} mono /><Fact label="Owner / mint authority" value={plan.mintAuthority} mono /><Fact label="Freeze authority" value={plan.freezeAuthority ?? 'disabled'} /><Fact label="Initial supply" value={plan.initialSupplyMinor} /><Fact label="Metadata" value={plan.metadata} /><Fact label="Estimated minimum cost" value={costSol === null ? 'unavailable' : `${costSol.toFixed(9)} SOL`} /><Fact label="Blockhash expiry height" value={String(plan.lastValidBlockHeight)} /></div><div className="rounded-md border p-3 text-sm"><p className="font-medium">Instructions</p><ol className="mt-2 list-decimal pl-5 text-muted-foreground">{plan.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ol></div><p className="text-xs text-muted-foreground">{plan.cost.note} A signature is a real Mainnet action; do not continue unless all values match the approved specification.</p></CardContent></Card>}
+      <div><h1 className="text-3xl font-bold">Internal RIAL Token Issuance</h1><p className="mt-2 text-muted-foreground">External networks, Solana Mainnet, and browser-wallet signing are disabled. Create and manage tokens only through the authenticated internal RIAL launchpad.</p></div>
+      <Card><CardContent className="p-5 space-y-4"><p className="text-sm text-muted-foreground">The legacy external-chain mint route is retained for compatibility but cannot create, sign, or broadcast a transaction.</p><Button type="button" disabled>External minting disabled</Button><p className="text-sm text-muted-foreground" role="status">{status}</p></CardContent></Card>
+      {EXTERNAL_MINT_ENABLED && plan && <Card><CardContent className="p-5 space-y-4"><h2 className="font-semibold">Exact plan to approve</h2><div className="grid gap-3 text-sm md:grid-cols-2"><Fact label="Network" value={plan.network} /><Fact label="Mint address" value={plan.mintAddress} mono /><Fact label="Owner / mint authority" value={plan.mintAuthority} mono /><Fact label="Freeze authority" value={plan.freezeAuthority ?? 'disabled'} /><Fact label="Initial supply" value={plan.initialSupplyMinor} /><Fact label="Metadata" value={plan.metadata} /><Fact label="Estimated minimum cost" value={costSol === null ? 'unavailable' : `${costSol.toFixed(9)} SOL`} /><Fact label="Blockhash expiry height" value={String(plan.lastValidBlockHeight)} /></div><div className="rounded-md border p-3 text-sm"><p className="font-medium">Instructions</p><ol className="mt-2 list-decimal pl-5 text-muted-foreground">{plan.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ol></div><p className="text-xs text-muted-foreground">{plan.cost.note} A signature is a real Mainnet action; do not continue unless all values match the approved specification.</p></CardContent></Card>}
     </div>
   );
 }
