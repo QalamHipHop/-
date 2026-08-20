@@ -1,6 +1,7 @@
 package custody
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -13,7 +14,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // VaultTransitSigner delegates private-key operations to HashiCorp Vault Transit.
@@ -32,7 +35,7 @@ func NewVault(addr, token string) (Signer, error) {
 	if !strings.HasPrefix(addr, "https://") {
 		return nil, errors.New("vault address must use https")
 	}
-	return &VaultTransitSigner{baseURL: addr, token: token, client: &http.Client{}}, nil
+	return &VaultTransitSigner{baseURL: addr, token: token, client: &http.Client{Timeout: 10 * time.Second}}, nil
 }
 
 func (v *VaultTransitSigner) Sign(ctx context.Context, keyID string, digest []byte) ([]byte, error) {
@@ -77,9 +80,15 @@ func (v *VaultTransitSigner) PubKey(ctx context.Context, keyID string) ([]byte, 
 		return nil, errors.New("vault transit key has no versions")
 	}
 	var latest string
+	var latestVersion int
 	for version := range response.Data.Keys {
-		if version > latest {
+		parsedVersion, err := strconv.Atoi(version)
+		if err != nil || parsedVersion < 1 {
+			continue
+		}
+		if latest == "" || parsedVersion > latestVersion {
 			latest = version
+			latestVersion = parsedVersion
 		}
 	}
 	encoded := response.Data.Keys[latest].PublicKey
@@ -108,7 +117,7 @@ func (v *VaultTransitSigner) request(ctx context.Context, method, path string, b
 		if err != nil {
 			return err
 		}
-		reader = strings.NewReader(string(raw))
+		reader = bytes.NewReader(raw)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, v.baseURL+path, reader)
 	if err != nil {
