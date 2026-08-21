@@ -39,7 +39,13 @@ until "${compose[@]}" exec -T redis redis-cli -a "${REDIS_PASSWORD:-change-me}" 
 done
 
 "${compose[@]}" --profile tools run --rm migrate
-"${compose[@]}" --profile tools run --rm seed || echo "Seed skipped or already applied."
+# Never inject synthetic/demo balances or markets implicitly. Development data is
+# opt-in and a failed seed must stop bootstrap instead of being reported as success.
+if [[ "${RIAL_BOOTSTRAP_SEED:-false}" == "true" ]]; then
+  "${compose[@]}" --profile tools run --rm seed
+else
+  echo "Skipping seed: set RIAL_BOOTSTRAP_SEED=true explicitly for development only."
+fi
 "${compose[@]}" up -d --build backend frontend matching-engine trading-engine wallet-service launchpad-service payment-service notification-service analytics ai-engine
 
 cat <<'EOF'
