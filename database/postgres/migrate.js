@@ -56,6 +56,9 @@ async function main() {
     }
     console.log('migrations: up-to-date');
   } else if (cmd === 'down') {
+    if (process.env.ALLOW_METADATA_ONLY_DOWN !== 'true') {
+      throw new Error('metadata-only rollback is disabled; set ALLOW_METADATA_ONLY_DOWN=true only for controlled recovery');
+    }
     const steps = parseInt(arg || '1', 10);
     const { rows } = await client.query('SELECT name FROM _migrations ORDER BY id DESC LIMIT $1', [steps]);
     for (const r of rows) {
